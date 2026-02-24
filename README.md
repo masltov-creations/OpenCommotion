@@ -154,6 +154,20 @@ Browser E2E:
 make test-e2e
 ```
 
+`make test-e2e` auto-prepares required Chromium runtime libs in user space on Linux via `scripts/ensure_playwright_libs.sh` (no sudo required for that step).
+
+Security gates:
+
+```bash
+make security-checks
+```
+
+Performance gates:
+
+```bash
+make perf-checks
+```
+
 Full validation suite:
 
 ```bash
@@ -166,12 +180,20 @@ If Playwright dependencies are missing:
 npx playwright install --with-deps chromium
 ```
 
+Fresh agent-consumer proof:
+
+```bash
+make fresh-agent-e2e
+```
+
 ## Docs You Want First
 
 - Agent connection guide: `docs/AGENT_CONNECTION.md`
 - Robust usage patterns: `docs/USAGE_PATTERNS.md`
 - Architecture: `docs/ARCHITECTURE.md`
 - Closeout plan: `docs/CLOSEOUT_PLAN.md`
+- Release runbook: `RELEASE.md`
+- Contribution workflow: `CONTRIBUTING.md`
 - Agent scaffolds and templates: `agents/scaffolds/`
 
 ## Repository Structure

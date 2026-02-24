@@ -11,6 +11,41 @@ Ship OpenCommotion from scaffold/demo to release-candidate quality with:
 - Semantic artifact recall
 - Full system E2E, security/perf gates, and release docs
 
+## Status Snapshot (2026-02-24)
+
+Definition-of-complete status:
+- [x] Typed and voice turns work end-to-end through gateway, orchestrator, brush compile, UI, and artifact memory.
+- [x] Gateway rejects invalid payloads via schema validation and returns stable error envelopes.
+- [x] UI stage applies incoming patches from realtime events (not static placeholders).
+- [x] Artifact recall supports lexical plus embedding similarity with deterministic ranking.
+- [x] CI/validation gates include backend tests, UI tests, browser E2E, schema validation, and baseline perf/security checks.
+- [x] Release runbook is complete and fresh-machine setup/dev/test/demo path is proven without manual debugging.
+
+Evidence used for this status:
+- `make test`: pass (15 tests)
+- `make test-ui`: pass (Vitest UI tests, including patch runtime thresholds)
+- `make test-e2e`: pass
+- `make security-checks`: pass (`pip check`, `pip-audit`, security baseline tests, `npm audit --audit-level=high`)
+- `make perf-checks`: pass (orchestrate latency + UI patch-apply threshold tests)
+- `make test-complete`: pass
+- `make fresh-agent-e2e`: pass (fresh consumer agent-path validation)
+- `tests/integration/test_full_e2e_flow.py`
+- `tests/integration/test_gateway_contracts.py`
+- `tests/integration/test_security_baseline.py`
+- `tests/integration/test_performance_thresholds.py`
+- `tests/unit/test_protocol_validation.py`
+- `apps/ui/src/runtime/sceneRuntime.test.ts`
+- `apps/ui/src/App.tsx`
+- `.github/workflows/ci.yml`
+- `RELEASE.md`
+
+Phase status:
+- [x] Phase 0: Alignment and Freeze
+- [x] Phase 1: Core Runtime Completion
+- [x] Phase 2: UI + Memory Completion
+- [x] Phase 3: Quality Gates
+- [x] Phase 4: Release Candidate
+
 ## Definition of Complete
 
 Implementation is considered complete only when all of the following are true:
@@ -78,6 +113,12 @@ All streams must meet these required gates before closeout:
 - `schema_validation_pass`: strict schema checks in gateway/orchestrator
 - `security_checks_pass`: dependency audit + baseline API hardening checks
 - `performance_thresholds_pass`: median turn latency and UI patch-apply time within target
+
+Current gate status:
+- [x] `tests_pass`
+- [x] `schema_validation_pass`
+- [x] `security_checks_pass`
+- [x] `performance_thresholds_pass`
 
 ## Execution Rhythm
 

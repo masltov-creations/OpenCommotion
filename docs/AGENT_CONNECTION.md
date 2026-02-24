@@ -27,6 +27,7 @@ make down
 Notes:
 - Keep all Python calls on the project environment: `source .venv/bin/activate` or use `.venv/bin/python`.
 - If `make dev` is running in one terminal, run client commands from a second terminal.
+- For a full fresh-consumer proof in one command, run `make fresh-agent-e2e`.
 
 ## 1) Start the stack
 
@@ -305,6 +306,8 @@ Context packet template:
   "quality_gates": [
     "make test-all",
     "make test-e2e",
+    "make security-checks",
+    "make perf-checks",
     "npm run ui:build"
   ],
   "handoff_required": [
@@ -394,6 +397,9 @@ Handoff report template:
   - check `runtime/logs/gateway.log`
   - check `runtime/logs/orchestrator.log`
   - rerun `make down && make dev`
+- Browser E2E fails with missing system libs (example: `libnspr4.so`):
+  - run `bash scripts/ensure_playwright_libs.sh`
+  - rerun `make test-e2e`
 - Python module error (example: `No module named httpx`):
   - run `. .venv/bin/activate`
   - rerun command with `.venv/bin/python ...`

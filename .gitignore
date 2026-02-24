@@ -19,10 +19,12 @@ test-results/
 runtime/logs/
 runtime/agent-runs/*.pid
 runtime/agent-runs/*.tmp
+.cache/pw-deps/
 
 # Data artifacts
 services/artifact_registry/data/
 data/audio/
+data/artifacts/bundles/
 *.sqlite3
 *.db
 

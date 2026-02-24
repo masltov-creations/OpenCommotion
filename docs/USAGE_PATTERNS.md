@@ -124,7 +124,8 @@ When using `brush/compile`:
 - One voice synth call completed and audio URI played.
 - One artifact save/search/recall cycle completed.
 - One websocket reconnect simulated and recovered.
-- Tests pass (`make test-all` at minimum).
+- Quality gates pass (`make test-complete`).
+- Fresh consumer agent proof passes (`make fresh-agent-e2e`).
 
 ## 11) Minimal run commands
 

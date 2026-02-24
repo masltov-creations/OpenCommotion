@@ -2,89 +2,78 @@ Project: OpenCommotion
 
 Updated: 2026-02-24
 
+Status:
+- Closeout implementation: complete per `docs/CLOSEOUT_PLAN.md`
+- Validation gates: passing locally (`make test-complete`)
+- Fresh agent-consumer E2E proof: passing (`make fresh-agent-e2e`)
+
 Objective:
 - Build a local-first, open-source visual computing platform with synchronized text, voice, and visual agent outputs.
 - Enable reusable visual artifact memory with smart save and fast recall.
 
-Current implemented baseline:
-- Fresh rebuild completed after reset; prior incomplete implementation archived at:
-  - `/home/mashuri/.openclaw/workspace/agent-runs/opencommotion-reset-20260223T211232`
-- Monorepo scaffold with UI, gateway, orchestrator, brush engine, artifact registry, protocol schemas, and tests.
-- Parallel expert-agent definitions under `agents/`.
-- Runtime expert-agent run state files under `runtime/agent-runs/`.
-- Workflow DAG at `runtime/orchestrator/workflow_opencommotion_v1.json`.
+Implemented system:
+- Gateway (`services/gateway/app/main.py`)
+  - REST ingress + websocket event fanout
+  - Schema validation and stable error envelopes
+  - Voice, orchestrate, brush compile, and artifact lifecycle endpoints
+- Orchestrator (`services/orchestrator/app/main.py`)
+  - Multi-channel turn assembly (text + voice + visual strokes)
+  - Timeline metadata composition
+- Brush engine (`services/brush_engine/opencommotion_brush/compiler.py`)
+  - Deterministic intent-to-patch compilation
+- Artifact registry (`services/artifact_registry/opencommotion_artifacts/registry.py`)
+  - SQLite index + bundle manifests
+  - Lexical, semantic, and hybrid recall
+  - Pin/archive lifecycle support
+- UI runtime (`apps/ui/src/App.tsx`, `apps/ui/src/runtime/sceneRuntime.ts`)
+  - Realtime websocket ingestion
+  - Patch-driven scene construction and playback controls
+  - Voice input upload + transcript-assisted turn flow
+- Protocol validation (`services/protocol/schema_validation.py`)
+  - Schema guardrails for strokes, patches, events, and artifact bundles
 
-Implemented services and contracts:
-- Gateway: `services/gateway/app/main.py`
-  - Health endpoint
-  - WebSocket broadcast endpoint
-  - Brush compile endpoint
-  - Artifact save/search/pin/archive/recall endpoints
-  - Orchestrate endpoint delegating to orchestrator
-- Orchestrator: `services/orchestrator/app/main.py`
-  - Health endpoint
-  - Basic multi-agent turn output (text + visual strokes + voice segments)
-- Brush engine: `services/brush_engine/opencommotion_brush/compiler.py`
-  - Intent-to-patch compiler for:
-    - `spawnCharacter`
-    - `animateMoonwalk`
-    - `orbitGlobe`
-    - `ufoLandingBeat`
-    - `drawAdoptionCurve`
-    - `drawPieSaturation`
-    - `annotateInsight`
-    - `sceneMorph`
-- Artifact registry: `services/artifact_registry/opencommotion_artifacts/registry.py`
-  - SQLite metadata index
-  - Bundle manifest persistence
-  - Search/pin/archive/lookup
-- Protocol schemas:
-  - `packages/protocol/schemas/events/`
-  - `packages/protocol/schemas/types/`
-
-UI baseline:
-- React + Vite shell at `apps/ui/`
-- Prompt submission to gateway orchestrate endpoint
-- Live patch count display
-- Manual artifact save and search panel
-
-Parallel execution assets:
-- Agent specs: `agents/*.json`
-- Spawn script: `scripts/spawn_expert_agents.py`
-- Parallel wave runner: `scripts/run_parallel_wave.sh`
+Current voice engine behavior:
+- STT: local hint/text-fallback transcription path (`services/agents/voice/stt/worker.py`)
+- TTS: `espeak`/`espeak-ng` when available, tone fallback otherwise (`services/agents/voice/tts/worker.py`)
 
 Validation coverage:
-- Unit: `tests/unit/test_brush_compiler.py`
-- Integration:
+- Unit tests:
+  - `tests/unit/test_brush_compiler.py`
+  - `tests/unit/test_protocol_validation.py`
+- Integration tests:
+  - `tests/integration/test_full_e2e_flow.py`
+  - `tests/integration/test_gateway_contracts.py`
+  - `tests/integration/test_security_baseline.py`
+  - `tests/integration/test_performance_thresholds.py`
   - `tests/integration/test_gateway_health.py`
   - `tests/integration/test_orchestrator_health.py`
+- Browser E2E:
+  - `tests/e2e/ui-flow.spec.ts`
 
-Runbook:
-1. `python3 -m venv .venv && source .venv/bin/activate`
-2. `pip install -r requirements.txt`
-3. `npm install`
-4. `cp .env.example .env`
-5. `make dev`
+Gate commands:
+- `make test-all`
+- `make test-e2e`
+- `make security-checks`
+- `make perf-checks`
+- `make test-complete`
+- `make fresh-agent-e2e`
 
-Immediate next implementation wave:
-1. Replace placeholder STT/TTS workers with production local engines.
-2. Add event schema validation at gateway ingress.
-3. Add embedding-backed semantic artifact recall.
-4. Extend UI stage renderer from static SVG to patch-driven runtime.
-5. Add end-to-end tests for full typed + voice + artifact recall loop.
+Execution and release docs:
+- `README.md`
+- `docs/AGENT_CONNECTION.md`
+- `docs/USAGE_PATTERNS.md`
+- `docs/ARCHITECTURE.md`
+- `docs/CLOSEOUT_PLAN.md`
+- `RELEASE.md`
+- `CONTRIBUTING.md`
 
-Closeout execution package:
-- Master closeout plan: `docs/CLOSEOUT_PLAN.md`
+Parallel agent assets:
+- Agent specs: `agents/*.json`
 - Skill scaffolds: `agents/scaffolds/`
-- Closeout workflow DAG: `runtime/orchestrator/workflow_opencommotion_v2_closeout.json`
+- Coordination templates: `agents/scaffolds/templates/`
+- Workflow DAGs:
+  - `runtime/orchestrator/workflow_opencommotion_v1.json`
+  - `runtime/orchestrator/workflow_opencommotion_v2_closeout.json`
 
-Closeout implementation progress (2026-02-24):
-- Completed:
-  - Gateway/orchestrator schema validation integration
-  - Voice transcribe/synthesize API endpoints and local audio artifact serving
-  - Artifact semantic/hybrid recall and pin/archive API endpoints
-  - Patch-driven UI runtime with websocket event ingestion and playback controls
-  - Expanded backend integration tests, UI behavior tests, and browser E2E spec
-- Remaining environment dependency:
-  - Install Playwright system libs on local machine for browser E2E execution:
-    - `npx playwright install --with-deps chromium`
+Known non-blocking limitation:
+- `jsonschema.RefResolver` deprecation warning is still present and should be migrated to `referencing` library in a future maintenance pass.

@@ -5,7 +5,7 @@ test('typed + voice + artifact flow', async ({ page }) => {
 
   await page.getByLabel('voice file').setInputFiles('tests/e2e/fixtures/voice-hint.txt')
   await page.getByRole('button', { name: 'Transcribe Audio' }).click()
-  await expect(page.getByText(/moonwalk adoption voice sample/i)).toBeVisible()
+  await expect(page.locator('.voice-panel .muted')).toHaveText(/moonwalk adoption voice sample/i)
 
   await page.getByRole('button', { name: 'Run Turn' }).click()
   await expect(page.getByText(/OpenCommotion:/)).toBeVisible()
