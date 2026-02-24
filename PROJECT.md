@@ -33,8 +33,11 @@ Implemented system:
   - Schema guardrails for strokes, patches, events, and artifact bundles
 
 Current voice engine behavior:
-- STT: local hint/text-fallback transcription path (`services/agents/voice/stt/worker.py`)
-- TTS: `espeak`/`espeak-ng` when available, tone fallback otherwise (`services/agents/voice/tts/worker.py`)
+- STT: policy-driven engine routing (`auto`/`faster-whisper`/`vosk`/`text-fallback`) with strict production guardrails (`services/agents/voice/stt/worker.py`)
+- TTS: policy-driven engine routing (`auto`/`piper`/`espeak`/`tone-fallback`) with strict production guardrails (`services/agents/voice/tts/worker.py`)
+- Voice preflight and runtime capabilities:
+  - `GET /v1/voice/capabilities`
+  - `make voice-preflight`
 
 Validation coverage:
 - Unit tests:
@@ -57,6 +60,7 @@ Gate commands:
 - `make perf-checks`
 - `make test-complete`
 - `make fresh-agent-e2e`
+- `make voice-preflight`
 
 Execution and release docs:
 - `README.md`
@@ -75,5 +79,5 @@ Parallel agent assets:
   - `runtime/orchestrator/workflow_opencommotion_v1.json`
   - `runtime/orchestrator/workflow_opencommotion_v2_closeout.json`
 
-Known non-blocking limitation:
-- `jsonschema.RefResolver` deprecation warning is still present and should be migrated to `referencing` library in a future maintenance pass.
+Open maintenance item:
+- If you require a specific high-fidelity STT/TTS backend in production, install and configure those models/binaries explicitly (strict mode enforces this at runtime).

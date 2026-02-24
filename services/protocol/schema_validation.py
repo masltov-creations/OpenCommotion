@@ -8,7 +8,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
-from jsonschema.validators import RefResolver
+from referencing import Registry, Resource
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_ROOT = PROJECT_ROOT / "packages" / "protocol" / "schemas"
@@ -30,14 +30,27 @@ class ProtocolValidator:
     @lru_cache(maxsize=64)
     def _load_schema(self, schema_path: str) -> dict[str, Any]:
         path = (self.schema_root / schema_path).resolve()
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    @lru_cache(maxsize=1)
+    def _schema_registry(self) -> Registry:
+        registry = Registry()
+        for schema_file in sorted(self.schema_root.rglob("*.json")):
+            schema = json.loads(schema_file.read_text(encoding="utf-8"))
+            if not isinstance(schema, dict) or not isinstance(schema.get("$schema"), str):
+                continue
+            resource = Resource.from_contents(schema)
+            schema_uri = schema_file.resolve().as_uri()
+            registry = registry.with_resource(schema_uri, resource)
+            schema_id = schema.get("$id")
+            if isinstance(schema_id, str) and schema_id:
+                registry = registry.with_resource(schema_id, resource)
+        return registry
 
     @lru_cache(maxsize=64)
     def _validator(self, schema_path: str) -> Draft202012Validator:
-        path = (self.schema_root / schema_path).resolve()
         schema = self._load_schema(schema_path)
-        resolver = RefResolver(base_uri=path.as_uri(), referrer=schema)
-        return Draft202012Validator(schema=schema, resolver=resolver)
+        return Draft202012Validator(schema=schema, registry=self._schema_registry())
 
     def validate(self, schema_path: str, payload: Any) -> None:
         validator = self._validator(schema_path)

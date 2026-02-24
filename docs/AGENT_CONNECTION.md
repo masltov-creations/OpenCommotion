@@ -86,6 +86,17 @@ curl -sS -X POST http://127.0.0.1:8000/v1/voice/synthesize \
 
 The returned segment `audio_uri` is served by gateway under `/v1/audio/...`.
 
+- Check voice engine readiness (recommended before strict runs):
+
+```bash
+curl -sS http://127.0.0.1:8000/v1/voice/capabilities
+```
+
+Production note:
+- Set `OPENCOMMOTION_VOICE_REQUIRE_REAL_ENGINES=true` to enforce real STT/TTS engines.
+- In strict mode, voice endpoints and turn orchestration return `503` when only fallback engines are available.
+- Run `make voice-preflight` before starting production agents.
+
 ## 5) Artifact memory connection points
 
 - Save artifact:

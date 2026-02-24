@@ -8,8 +8,21 @@ import wave
 from pathlib import Path
 from uuid import uuid4
 
+from services.agents.voice.common import normalized_env, require_real_voice_engines
+from services.agents.voice.errors import VoiceEngineError
+
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_AUDIO_ROOT = PROJECT_ROOT / "data" / "audio"
+
+TTS_ENGINE_ENV = "OPENCOMMOTION_TTS_ENGINE"
+PIPER_BIN_ENV = "OPENCOMMOTION_PIPER_BIN"
+PIPER_MODEL_ENV = "OPENCOMMOTION_PIPER_MODEL"
+PIPER_CONFIG_ENV = "OPENCOMMOTION_PIPER_CONFIG"
+ESPEAK_BIN_ENV = "OPENCOMMOTION_ESPEAK_BIN"
+ESPEAK_RATE_ENV = "OPENCOMMOTION_ESPEAK_RATE"
+
+VALID_TTS_ENGINES = {"auto", "piper", "espeak", "tone-fallback"}
+REAL_TTS_ENGINES = {"piper", "espeak"}
 
 
 def synthesize_segments(text: str, voice: str = "opencommotion-local") -> dict:
@@ -21,8 +34,20 @@ def synthesize_segments(text: str, voice: str = "opencommotion-local") -> dict:
     output_path = audio_root / filename
 
     engine = _render_voice_wav(safe_text, output_path)
-    duration_ms = _wav_duration_ms(output_path)
+    if require_real_voice_engines() and engine not in REAL_TTS_ENGINES:
+        output_path.unlink(missing_ok=True)
+        capabilities = tts_capabilities()
+        raise VoiceEngineError(
+            engine="tts",
+            message=(
+                "No real TTS engine is configured or available. "
+                f"selected={capabilities['selected_engine']}, "
+                f"piper_ready={capabilities['piper']['ready']}, "
+                f"espeak_ready={capabilities['espeak']['ready']}"
+            ),
+        )
 
+    duration_ms = _wav_duration_ms(output_path)
     return {
         "voice": voice,
         "engine": engine,
@@ -37,17 +62,63 @@ def synthesize_segments(text: str, voice: str = "opencommotion-local") -> dict:
     }
 
 
+def tts_capabilities() -> dict:
+    selected_engine = _selected_engine()
+
+    piper_bin = _piper_binary()
+    piper_model = os.getenv(PIPER_MODEL_ENV, "").strip()
+    piper_ready = bool(piper_bin) and bool(piper_model) and Path(piper_model).is_file()
+
+    espeak_bin = _espeak_binary()
+    espeak_ready = espeak_bin is not None
+
+    return {
+        "selected_engine": selected_engine,
+        "strict_real_engines": require_real_voice_engines(),
+        "real_engines": sorted(REAL_TTS_ENGINES),
+        "piper": {
+            "binary": piper_bin,
+            "model": piper_model,
+            "ready": piper_ready,
+        },
+        "espeak": {
+            "binary": espeak_bin,
+            "ready": espeak_ready,
+        },
+    }
+
+
+def _selected_engine() -> str:
+    selected = normalized_env(TTS_ENGINE_ENV, default="auto")
+    if selected not in VALID_TTS_ENGINES:
+        return "auto"
+    return selected
+
+
 def _render_voice_wav(text: str, output_path: Path) -> str:
-    espeak_bin = shutil.which("espeak") or shutil.which("espeak-ng")
-    if espeak_bin:
-        completed = subprocess.run(
-            [espeak_bin, "-w", str(output_path), text],
-            capture_output=True,
-            text=True,
-            check=False,
+    selected_engine = _selected_engine()
+
+    if selected_engine == "piper":
+        return _render_with_piper(text, output_path, required=True)
+
+    if selected_engine == "espeak":
+        return _render_with_espeak(text, output_path, required=True)
+
+    if selected_engine == "tone-fallback":
+        _write_tone_wav(
+            output_path=output_path,
+            duration_ms=min(max(len(text) * 65, 900), 7000),
+            sample_rate=22050,
         )
-        if completed.returncode == 0 and output_path.exists():
-            return "espeak"
+        return "tone-fallback"
+
+    piper_engine = _render_with_piper(text, output_path, required=False)
+    if piper_engine:
+        return piper_engine
+
+    espeak_engine = _render_with_espeak(text, output_path, required=False)
+    if espeak_engine:
+        return espeak_engine
 
     _write_tone_wav(
         output_path=output_path,
@@ -55,6 +126,85 @@ def _render_voice_wav(text: str, output_path: Path) -> str:
         sample_rate=22050,
     )
     return "tone-fallback"
+
+
+def _render_with_piper(text: str, output_path: Path, required: bool) -> str | None:
+    piper_bin = _piper_binary()
+    piper_model = os.getenv(PIPER_MODEL_ENV, "").strip()
+    piper_config = os.getenv(PIPER_CONFIG_ENV, "").strip()
+
+    if not piper_bin:
+        if required:
+            raise VoiceEngineError(engine="piper", message="piper binary is not available")
+        return None
+    if not piper_model:
+        if required:
+            raise VoiceEngineError(engine="piper", message=f"Missing {PIPER_MODEL_ENV}")
+        return None
+    if not Path(piper_model).is_file():
+        if required:
+            raise VoiceEngineError(engine="piper", message=f"Piper model not found: {piper_model}")
+        return None
+
+    command = [piper_bin, "--model", piper_model, "--output_file", str(output_path)]
+    if piper_config:
+        command.extend(["--config", piper_config])
+
+    try:
+        completed = subprocess.run(command, input=text, capture_output=True, text=True, check=False)
+    except OSError as exc:
+        if required:
+            raise VoiceEngineError(engine="piper", message=f"piper synthesis failed: {exc}") from exc
+        return None
+    if completed.returncode == 0 and output_path.exists():
+        return "piper"
+
+    if required:
+        stderr = completed.stderr.strip() if completed.stderr else "unknown error"
+        raise VoiceEngineError(engine="piper", message=f"piper synthesis failed: {stderr}")
+    return None
+
+
+def _render_with_espeak(text: str, output_path: Path, required: bool) -> str | None:
+    espeak_bin = _espeak_binary()
+    if not espeak_bin:
+        if required:
+            raise VoiceEngineError(engine="espeak", message="espeak/espeak-ng binary is not available")
+        return None
+
+    command = [espeak_bin, "-w", str(output_path)]
+    rate = os.getenv(ESPEAK_RATE_ENV, "").strip()
+    if rate.isdigit():
+        command.extend(["-s", rate])
+    command.append(text)
+
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+    except OSError as exc:
+        if required:
+            raise VoiceEngineError(engine="espeak", message=f"espeak synthesis failed: {exc}") from exc
+        return None
+    if completed.returncode == 0 and output_path.exists():
+        return "espeak"
+
+    if required:
+        stderr = completed.stderr.strip() if completed.stderr else "unknown error"
+        raise VoiceEngineError(engine="espeak", message=f"espeak synthesis failed: {stderr}")
+    return None
+
+
+def _piper_binary() -> str | None:
+    configured = os.getenv(PIPER_BIN_ENV, "").strip()
+    if configured:
+        return shutil.which(configured) or configured
+    return shutil.which("piper")
+
+
+def _espeak_binary() -> str | None:
+    configured = os.getenv(ESPEAK_BIN_ENV, "").strip()
+    if configured:
+        return shutil.which(configured) or configured
+    return shutil.which("espeak") or shutil.which("espeak-ng")
 
 
 def _write_tone_wav(output_path: Path, duration_ms: int, sample_rate: int) -> None:
@@ -66,18 +216,18 @@ def _write_tone_wav(output_path: Path, duration_ms: int, sample_rate: int) -> No
         sample = int(32767 * envelope * (0.5 - abs(angle - 0.5)))
         sample_bytes.extend(struct.pack("<h", sample))
 
-    with wave.open(str(output_path), "wb") as wav:
-        wav.setnchannels(1)
-        wav.setsampwidth(2)
-        wav.setframerate(sample_rate)
-        wav.writeframes(sample_bytes)
+    with wave.open(str(output_path), "wb") as wav_writer:
+        wav_writer.setnchannels(1)
+        wav_writer.setsampwidth(2)
+        wav_writer.setframerate(sample_rate)
+        wav_writer.writeframes(sample_bytes)
 
 
 def _wav_duration_ms(path: Path) -> int:
-    with wave.open(str(path), "rb") as wav:
-        frames = wav.getnframes()
-        rate = wav.getframerate() or 1
+    with wave.open(str(path), "rb") as wav_reader:
+        frames = wav_reader.getnframes()
+        rate = wav_reader.getframerate() or 1
     return int((frames / rate) * 1000)
 
 
-__all__ = ["synthesize_segments"]
+__all__ = ["synthesize_segments", "tts_capabilities"]

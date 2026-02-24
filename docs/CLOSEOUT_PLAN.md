@@ -22,7 +22,7 @@ Definition-of-complete status:
 - [x] Release runbook is complete and fresh-machine setup/dev/test/demo path is proven without manual debugging.
 
 Evidence used for this status:
-- `make test`: pass (15 tests)
+- `make test`: pass (20 tests)
 - `make test-ui`: pass (Vitest UI tests, including patch runtime thresholds)
 - `make test-e2e`: pass
 - `make security-checks`: pass (`pip check`, `pip-audit`, security baseline tests, `npm audit --audit-level=high`)
@@ -33,6 +33,7 @@ Evidence used for this status:
 - `tests/integration/test_gateway_contracts.py`
 - `tests/integration/test_security_baseline.py`
 - `tests/integration/test_performance_thresholds.py`
+- `tests/integration/test_voice_engine_policy.py`
 - `tests/unit/test_protocol_validation.py`
 - `apps/ui/src/runtime/sceneRuntime.test.ts`
 - `apps/ui/src/App.tsx`

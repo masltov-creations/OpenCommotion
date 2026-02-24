@@ -6,6 +6,7 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from services.agents.voice.errors import VoiceEngineError
 from services.agents.text.worker import generate_text_response
 from services.agents.visual.worker import generate_visual_strokes
 from services.agents.voice.tts.worker import synthesize_segments
@@ -38,7 +39,17 @@ def orchestrate(req: OrchestrateRequest) -> dict:
 
     text = generate_text_response(req.prompt)
     strokes = generate_visual_strokes(req.prompt)
-    voice = synthesize_segments(text)
+    try:
+        voice = synthesize_segments(text)
+    except VoiceEngineError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "tts_engine_unavailable",
+                "engine": exc.engine,
+                "message": str(exc),
+            },
+        ) from exc
 
     for idx, stroke in enumerate(strokes):
         try:

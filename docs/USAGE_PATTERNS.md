@@ -24,6 +24,7 @@ Required endpoints:
 - `POST /v1/brush/compile`
 - `POST /v1/voice/transcribe`
 - `POST /v1/voice/synthesize`
+- `GET /v1/voice/capabilities`
 - `POST /v1/artifacts/save`
 - `GET /v1/artifacts/search`
 - `POST /v1/artifacts/recall/{artifact_id}`
@@ -92,8 +93,8 @@ Use these defaults unless you have stricter requirements:
   - Reconnect with backoff.
   - Resume and dedupe by `session_id + turn_id`.
 - Voice synthesis/transcribe failure:
-  - Continue text+visual turn.
-  - Mark voice state degraded.
+  - If strict voice mode is enabled, treat `503` as deployment/config failure and halt.
+  - If strict mode is disabled, continue text+visual turn and mark voice state degraded.
 - Schema validation failure:
   - Treat as contract bug.
   - Log payload + schema path and halt processing for that request.
@@ -126,6 +127,7 @@ When using `brush/compile`:
 - One websocket reconnect simulated and recovered.
 - Quality gates pass (`make test-complete`).
 - Fresh consumer agent proof passes (`make fresh-agent-e2e`).
+- Voice preflight passes (`make voice-preflight`).
 
 ## 11) Minimal run commands
 

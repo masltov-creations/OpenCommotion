@@ -89,9 +89,49 @@ Essential endpoints:
 - `POST /v1/brush/compile`
 - `POST /v1/voice/transcribe`
 - `POST /v1/voice/synthesize`
+- `GET /v1/voice/capabilities`
 - `POST /v1/artifacts/save`
 - `GET /v1/artifacts/search`
 - `WS /v1/events/ws`
+
+## Production Voice Configuration
+
+Voice now supports policy-driven engine selection with strict mode.
+
+- STT engine selector: `OPENCOMMOTION_STT_ENGINE` (`auto`, `faster-whisper`, `vosk`, `text-fallback`)
+- TTS engine selector: `OPENCOMMOTION_TTS_ENGINE` (`auto`, `piper`, `espeak`, `tone-fallback`)
+- Strict production gate: `OPENCOMMOTION_VOICE_REQUIRE_REAL_ENGINES=true`
+
+When strict mode is enabled, voice endpoints and orchestration return `503` if real STT/TTS engines are not available.
+
+Preflight your voice stack:
+
+```bash
+make voice-preflight
+```
+
+Engine readiness via API:
+
+```bash
+curl -sS http://127.0.0.1:8000/v1/voice/capabilities | jq
+```
+
+Typical strict production env:
+
+```bash
+OPENCOMMOTION_VOICE_REQUIRE_REAL_ENGINES=true
+OPENCOMMOTION_STT_ENGINE=faster-whisper
+OPENCOMMOTION_STT_MODEL=tiny.en
+OPENCOMMOTION_TTS_ENGINE=piper
+OPENCOMMOTION_PIPER_MODEL=/opt/models/en_US-lessac-medium.onnx
+```
+
+Optional Python STT backends:
+
+```bash
+. .venv/bin/activate
+pip install faster-whisper vosk
+```
 
 ## Connect Agents
 
@@ -184,6 +224,12 @@ Fresh agent-consumer proof:
 
 ```bash
 make fresh-agent-e2e
+```
+
+Voice preflight:
+
+```bash
+make voice-preflight
 ```
 
 ## Docs You Want First

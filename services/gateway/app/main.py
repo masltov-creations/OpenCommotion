@@ -12,8 +12,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from services.agents.voice.stt.worker import transcribe_audio
-from services.agents.voice.tts.worker import synthesize_segments
+from services.agents.voice.errors import VoiceEngineError
+from services.agents.voice.stt.worker import stt_capabilities, transcribe_audio
+from services.agents.voice.tts.worker import synthesize_segments, tts_capabilities
 from services.artifact_registry.opencommotion_artifacts.registry import ArtifactRegistry
 from services.brush_engine.opencommotion_brush.compiler import compile_brush_batch
 from services.protocol import ProtocolValidationError, ProtocolValidator
@@ -198,7 +199,17 @@ async def transcribe_voice(
     if not audio_bytes:
         raise HTTPException(status_code=400, detail={"error": "empty_audio_payload"})
 
-    transcript = transcribe_audio(audio_bytes, hint=hint)
+    try:
+        transcript = transcribe_audio(audio_bytes, hint=hint)
+    except VoiceEngineError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "stt_engine_unavailable",
+                "engine": exc.engine,
+                "message": str(exc),
+            },
+        ) from exc
     return {"ok": True, "transcript": transcript}
 
 
@@ -206,8 +217,26 @@ async def transcribe_voice(
 def synthesize_voice(req: VoiceSynthesizeRequest) -> dict:
     if not req.text.strip():
         raise HTTPException(status_code=400, detail={"error": "text_required"})
-    voice = synthesize_segments(req.text, voice=req.voice)
+    try:
+        voice = synthesize_segments(req.text, voice=req.voice)
+    except VoiceEngineError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "tts_engine_unavailable",
+                "engine": exc.engine,
+                "message": str(exc),
+            },
+        ) from exc
     return {"ok": True, "voice": voice}
+
+
+@app.get("/v1/voice/capabilities")
+def voice_capabilities() -> dict:
+    return {
+        "stt": stt_capabilities(),
+        "tts": tts_capabilities(),
+    }
 
 
 @app.post("/v1/artifacts/save")
@@ -269,13 +298,31 @@ async def orchestrate(req: OrchestrateRequest) -> dict:
     if len(req.prompt) > 4000:
         raise HTTPException(status_code=422, detail={"error": "prompt_too_long", "max_chars": 4000})
 
-    async with httpx.AsyncClient(timeout=20) as client:
-        resp = await client.post(
-            f"{ORCHESTRATOR_URL}/v1/orchestrate",
-            json={"session_id": req.session_id, "prompt": req.prompt},
-        )
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.post(
+                f"{ORCHESTRATOR_URL}/v1/orchestrate",
+                json={"session_id": req.session_id, "prompt": req.prompt},
+            )
         resp.raise_for_status()
         result = resp.json()
+    except httpx.HTTPStatusError as exc:
+        details: dict | str
+        try:
+            payload = exc.response.json()
+            details = payload.get("detail", payload)
+        except ValueError:
+            details = {
+                "error": "orchestrator_http_error",
+                "status_code": exc.response.status_code,
+                "message": exc.response.text,
+            }
+        raise HTTPException(status_code=exc.response.status_code, detail=details) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={"error": "orchestrator_unreachable", "message": str(exc)},
+        ) from exc
 
     _validate_orchestrator_payload(result)
 
