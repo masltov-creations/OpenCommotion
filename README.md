@@ -98,6 +98,14 @@ opencommotion down
 opencommotion run
 ```
 
+If the UI loads but prompts look stale or turns behave inconsistently after moving/cloning repos, run:
+
+```bash
+opencommotion fresh
+```
+
+This resets local runtime state and rebuilds UI assets from current source.
+
 If you ever see `bash: ./scripts/setup.sh: Permission denied`:
 
 ```bash

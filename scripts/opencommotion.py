@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import shutil
 import subprocess
@@ -11,6 +12,8 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
+UI_SRC_ROOT = ROOT / "apps" / "ui" / "src"
+UI_BUILD_MARKER = ROOT / "apps" / "ui" / "dist" / ".opencommotion-build-hash"
 COMMANDS = [
     "install",
     "setup",
@@ -89,11 +92,64 @@ def cmd_setup() -> int:
 
 
 def cmd_run() -> int:
+    ui_code = _ensure_ui_dist_current()
+    if ui_code != 0:
+        return ui_code
     return _run(["bash", "scripts/dev_up.sh", "--ui-mode", "dist"])
 
 
 def cmd_dev() -> int:
     return _run(["bash", "scripts/dev_up.sh", "--ui-mode", "dev"])
+
+
+def _ui_hash_inputs() -> list[Path]:
+    files: list[Path] = []
+    if UI_SRC_ROOT.exists():
+        files.extend(sorted(p for p in UI_SRC_ROOT.rglob("*") if p.is_file()))
+    static_candidates = [
+        ROOT / "apps" / "ui" / "index.html",
+        ROOT / "apps" / "ui" / "package.json",
+        ROOT / "package.json",
+        ROOT / "package-lock.json",
+    ]
+    for candidate in static_candidates:
+        if candidate.exists():
+            files.append(candidate)
+    return files
+
+
+def _ui_source_hash() -> str:
+    digest = hashlib.sha256()
+    for path in _ui_hash_inputs():
+        rel = str(path.relative_to(ROOT)).encode("utf-8")
+        digest.update(rel)
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _ensure_ui_dist_current() -> int:
+    if os.getenv("OPENCOMMOTION_SKIP_UI_BUILD", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return 0
+    if not (ROOT / "apps" / "ui" / "package.json").exists():
+        return 0
+    if shutil.which("npm") is None:
+        return 0
+
+    source_hash = _ui_source_hash()
+    index_path = ROOT / "apps" / "ui" / "dist" / "index.html"
+    previous_hash = UI_BUILD_MARKER.read_text(encoding="utf-8").strip() if UI_BUILD_MARKER.exists() else ""
+    if index_path.exists() and previous_hash == source_hash:
+        return 0
+
+    print("Building UI assets...")
+    code = _run(["npm", "run", "ui:build"])
+    if code != 0:
+        return code
+    UI_BUILD_MARKER.parent.mkdir(parents=True, exist_ok=True)
+    UI_BUILD_MARKER.write_text(source_hash + "\n", encoding="utf-8")
+    return 0
 
 
 def _stack_running() -> bool:
@@ -161,12 +217,18 @@ def cmd_fresh() -> int:
     dry_run = os.getenv("OPENCOMMOTION_FRESH_DRY_RUN", "").strip().lower() in {"1", "true", "yes"}
     reset_env = os.getenv("OPENCOMMOTION_FRESH_RESET_ENV", "").strip().lower() in {"1", "true", "yes"}
     keep_bundles = os.getenv("OPENCOMMOTION_FRESH_KEEP_BUNDLES", "").strip().lower() in {"1", "true", "yes"}
+    running = _stack_running()
 
-    if _stack_running():
-        print("Detected running stack. Stopping before fresh reset...")
-        stop_code = cmd_down()
-        if stop_code != 0:
-            return stop_code
+    if running:
+        if dry_run:
+            print("[dry-run] would stop running stack before fresh reset")
+        else:
+            print("Detected running stack. Stopping before fresh reset...")
+            stop_code = cmd_down()
+            if stop_code != 0:
+                return stop_code
+    elif dry_run:
+        print("[dry-run] stack is not running")
 
     cleanup_paths = [
         ROOT / ".venv",

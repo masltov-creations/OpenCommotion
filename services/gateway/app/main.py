@@ -41,11 +41,38 @@ from services.protocol import ProtocolValidationError, ProtocolValidator
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://127.0.0.1:8001")
-VOICE_AUDIO_ROOT = Path(os.getenv("OPENCOMMOTION_AUDIO_ROOT", str(PROJECT_ROOT / "data" / "audio")))
-UI_DIST_ROOT = Path(os.getenv("OPENCOMMOTION_UI_DIST_ROOT", str(PROJECT_ROOT / "apps" / "ui" / "dist")))
 AGENT_RUN_DB_PATH = Path(
     os.getenv("OPENCOMMOTION_AGENT_RUN_DB_PATH", str(PROJECT_ROOT / "runtime" / "agent-runs" / "agent_manager.db"))
 )
+
+
+def _truthy(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _resolve_runtime_path(env_key: str, default_path: Path) -> Path:
+    raw = os.getenv(env_key, "").strip()
+    if not raw:
+        return default_path
+
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        candidate = (PROJECT_ROOT / candidate).resolve()
+    else:
+        candidate = candidate.resolve()
+
+    if _truthy(os.getenv("OPENCOMMOTION_ALLOW_EXTERNAL_PATHS")):
+        return candidate
+
+    try:
+        candidate.relative_to(PROJECT_ROOT.resolve())
+        return candidate
+    except ValueError:
+        return default_path
+
+
+VOICE_AUDIO_ROOT = _resolve_runtime_path("OPENCOMMOTION_AUDIO_ROOT", PROJECT_ROOT / "data" / "audio")
+UI_DIST_ROOT = _resolve_runtime_path("OPENCOMMOTION_UI_DIST_ROOT", PROJECT_ROOT / "apps" / "ui" / "dist")
 VOICE_AUDIO_ROOT.mkdir(parents=True, exist_ok=True)
 
 protocol_validator = ProtocolValidator()
