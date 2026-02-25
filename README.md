@@ -126,6 +126,19 @@ Stop:
 opencommotion down
 ```
 
+Update safely (works even if stack is already running):
+
+```bash
+opencommotion update
+```
+
+`opencommotion update` will:
+1. detect if the stack is running
+2. stop it if needed
+3. `git pull --ff-only origin main`
+4. reinstall/update dependencies
+5. restart automatically only if it was running before
+
 ## Connect Your Agents (Python-first)
 
 Robust default client:

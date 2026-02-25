@@ -16,6 +16,7 @@ COMMANDS = [
     "setup",
     "run",
     "dev",
+    "update",
     "down",
     "preflight",
     "status",
@@ -32,6 +33,7 @@ COMMAND_FLAG_ALIASES = {
     "-setup": "setup",
     "-run": "run",
     "-dev": "dev",
+    "-update": "update",
     "-down": "down",
     "-stop": "down",
     "-preflight": "preflight",
@@ -90,6 +92,48 @@ def cmd_run() -> int:
 
 def cmd_dev() -> int:
     return _run(["bash", "scripts/dev_up.sh", "--ui-mode", "dev"])
+
+
+def _stack_running() -> bool:
+    gateway_ok, _ = _check_url("http://127.0.0.1:8000/health")
+    orchestrator_ok, _ = _check_url("http://127.0.0.1:8001/health")
+    return gateway_ok or orchestrator_ok
+
+
+def cmd_update() -> int:
+    was_running = _stack_running()
+    if was_running:
+        print("Detected running stack. Stopping before update...")
+        stop_code = cmd_down()
+        if stop_code != 0:
+            return stop_code
+
+    print("Pulling latest changes...")
+    pull_code = _run(["git", "pull", "--ff-only", "origin", "main"])
+    if pull_code != 0:
+        if was_running:
+            print("Update pull failed; restarting previous stack state...")
+            _ = cmd_run()
+        return pull_code
+
+    print("Installing/updating dependencies...")
+    install_code = cmd_install()
+    if install_code != 0:
+        if was_running:
+            print("Install failed; restarting previous stack state...")
+            _ = cmd_run()
+        return install_code
+
+    if was_running:
+        print("Restarting stack...")
+        run_code = cmd_run()
+        if run_code != 0:
+            return run_code
+        print("Update complete. Stack is running.")
+        return 0
+
+    print("Update complete. Stack was not running; start with: opencommotion -run")
+    return 0
 
 
 def cmd_down() -> int:
@@ -289,6 +333,8 @@ def main() -> int:
         return cmd_run()
     if command == "dev":
         return cmd_dev()
+    if command == "update":
+        return cmd_update()
     if command == "down":
         return cmd_down()
     if command == "preflight":
