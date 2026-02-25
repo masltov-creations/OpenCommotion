@@ -21,6 +21,14 @@ Use a two-channel model for all clients:
 
 Required endpoints:
 - `POST /v1/orchestrate`
+- `POST /v1/agent-runs`
+- `GET /v1/agent-runs`
+- `GET /v1/agent-runs/{run_id}`
+- `POST /v1/agent-runs/{run_id}/enqueue`
+- `POST /v1/agent-runs/{run_id}/control`
+- `GET /v1/setup/state`
+- `POST /v1/setup/validate`
+- `POST /v1/setup/state`
 - `POST /v1/brush/compile`
 - `POST /v1/voice/transcribe`
 - `POST /v1/voice/synthesize`
@@ -32,6 +40,10 @@ Required endpoints:
 - `POST /v1/artifacts/pin/{artifact_id}`
 - `POST /v1/artifacts/archive/{artifact_id}`
 - `WS /v1/events/ws`
+
+Auth defaults:
+- Send `x-api-key` for REST requests.
+- Send `?api_key=` on websocket URL.
 
 ## 3) Quick-start lane (agents)
 
@@ -45,6 +57,7 @@ Required endpoints:
 - render `payload.visual_patches` by `at_ms`
 - play `payload.voice.segments[*].audio_uri`
 7. Optionally save and search artifacts.
+8. For autonomous backend loops, create run via `/v1/agent-runs`, enqueue prompts, and control run state.
 
 Recommended script:
 - `scripts/agent_examples/robust_turn_client.py`
@@ -105,6 +118,7 @@ Use these defaults unless you have stricter requirements:
 
 Choose mode per use case:
 - `orchestrate` mode: best for natural-language, low-effort generation.
+- `agent-runs` mode: best for autonomous/event-driven multi-turn execution with pause/resume controls.
 - `brush/compile` mode: best for deterministic authored animation sequences.
 
 When using `brush/compile`:
@@ -126,10 +140,11 @@ When using `brush/compile`:
 - Run one typed turn and verify render output.
 - Run one voice synth call and verify audio URI playback.
 - Run one artifact save/search/recall cycle.
+- Run one autonomous run-manager cycle (`create -> enqueue -> run_once`).
 - Simulate one websocket reconnect and confirm recovery.
-- Run quality gates (`make test-complete`).
-- Run fresh consumer agent proof (`make fresh-agent-e2e`).
-- Run voice preflight (`make voice-preflight`).
+- Run quality gates (`python3 scripts/opencommotion.py test-complete`).
+- Run fresh consumer agent proof (`python3 scripts/opencommotion.py fresh-agent-e2e`).
+- Run voice preflight (`python3 scripts/opencommotion.py preflight`).
 
 ## 11) Minimal run commands
 
@@ -137,6 +152,8 @@ When using `brush/compile`:
 python3 scripts/opencommotion.py run
 . .venv/bin/activate
 python scripts/agent_examples/robust_turn_client.py --session demo-1 --prompt "moonwalk adoption chart"
+python scripts/agent_examples/codex_cli_turn_client.py
+python scripts/agent_examples/openclaw_cli_turn_client.py
 python3 scripts/opencommotion.py down
 ```
 
@@ -150,7 +167,7 @@ When multiple specialist agents are active, use one shared operating model:
 5. Merge only with evidence from tests, contracts, and docs updates.
 
 Reference details:
-- `docs/AGENT_CONNECTION.md` sections 12-15
+- `docs/AGENT_CONNECTION.md` sections 13-16
 - `agents/scaffolds/skill-agent-orchestration-ops.json`
 - `agents/scaffolds/templates/wave-context.example.json`
 - `agents/scaffolds/templates/lane-ownership.example.json`

@@ -8,6 +8,8 @@ from services.orchestrator.app.main import app as orchestrator_app
 
 
 def _client_with_inprocess_orchestrator(tmp_path, monkeypatch) -> TestClient:
+    monkeypatch.setenv("OPENCOMMOTION_AUTH_MODE", "api-key")
+    monkeypatch.delenv("OPENCOMMOTION_API_KEYS", raising=False)
     db_path = tmp_path / "artifacts.db"
     bundle_root = tmp_path / "bundles"
     monkeypatch.setattr(

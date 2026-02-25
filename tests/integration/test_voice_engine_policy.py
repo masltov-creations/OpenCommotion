@@ -8,6 +8,8 @@ from services.orchestrator.app.main import app as orchestrator_app
 
 
 def _client_with_inprocess_orchestrator(tmp_path, monkeypatch) -> TestClient:
+    monkeypatch.setenv("OPENCOMMOTION_AUTH_MODE", "api-key")
+    monkeypatch.delenv("OPENCOMMOTION_API_KEYS", raising=False)
     db_path = tmp_path / "artifacts.db"
     bundle_root = tmp_path / "bundles"
     monkeypatch.setattr(
@@ -86,6 +88,33 @@ def test_strict_mode_rejects_orchestrate_with_unavailable_tts(tmp_path, monkeypa
         "/v1/orchestrate",
         json={"session_id": "strict-voice", "prompt": "moonwalk adoption chart"},
     )
+    assert res.status_code == 503
+    detail = res.json()["detail"]
+    assert detail["error"] == "tts_engine_unavailable"
+
+
+def test_openai_stt_requires_cloud_config_when_selected(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENCOMMOTION_STT_ENGINE", "openai-compatible")
+    monkeypatch.delenv("OPENCOMMOTION_VOICE_OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENCOMMOTION_VOICE_STT_MODEL", raising=False)
+
+    c = _client_with_inprocess_orchestrator(tmp_path, monkeypatch)
+    res = c.post(
+        "/v1/voice/transcribe",
+        files={"audio": ("sample.wav", b"wave-content", "audio/wav")},
+    )
+    assert res.status_code == 503
+    detail = res.json()["detail"]
+    assert detail["error"] == "stt_engine_unavailable"
+
+
+def test_openai_tts_requires_cloud_config_when_selected(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENCOMMOTION_TTS_ENGINE", "openai-compatible")
+    monkeypatch.delenv("OPENCOMMOTION_VOICE_OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENCOMMOTION_VOICE_TTS_MODEL", raising=False)
+
+    c = _client_with_inprocess_orchestrator(tmp_path, monkeypatch)
+    res = c.post("/v1/voice/synthesize", json={"text": "speak now"})
     assert res.status_code == 503
     detail = res.json()["detail"]
     assert detail["error"] == "tts_engine_unavailable"

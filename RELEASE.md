@@ -23,16 +23,16 @@ cp .env.example .env
 ## 3) Validate core stack
 
 ```bash
-make dev
+python3 scripts/opencommotion.py dev
 curl -sS http://127.0.0.1:8000/health
 curl -sS http://127.0.0.1:8001/health
-make down
+python3 scripts/opencommotion.py down
 ```
 
 ## 4) Run full quality gates
 
 ```bash
-make test-complete
+python3 scripts/opencommotion.py test-complete
 ```
 
 Includes:
@@ -45,7 +45,7 @@ Includes:
 ## 5) Fresh agent consumer E2E proof
 
 ```bash
-make fresh-agent-e2e
+python3 scripts/opencommotion.py fresh-agent-e2e
 ```
 
 This command:
@@ -57,8 +57,8 @@ This command:
 
 ## 6) Release-readiness criteria
 
-- `make test-complete` passes
-- `make fresh-agent-e2e` passes
+- `python3 scripts/opencommotion.py test-complete` passes
+- `python3 scripts/opencommotion.py fresh-agent-e2e` passes
 - `README.md`, `docs/AGENT_CONNECTION.md`, `docs/USAGE_PATTERNS.md`, and `docs/ARCHITECTURE.md` are aligned with behavior
 - `PROJECT.md` progress checklist and active tasks are updated with current state
 
@@ -67,8 +67,8 @@ This command:
 ```bash
 git checkout main
 git pull --ff-only
-make test-complete
-make fresh-agent-e2e
+python3 scripts/opencommotion.py test-complete
+python3 scripts/opencommotion.py fresh-agent-e2e
 git tag -a v0.5.0-rc1 -m "OpenCommotion release candidate 1"
 git push origin main --tags
 ```

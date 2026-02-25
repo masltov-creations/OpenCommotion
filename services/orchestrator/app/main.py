@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from time import perf_counter
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
 from services.agents.text.worker import LLMEngineError, generate_text_response, llm_capabilities
 from services.agents.voice.errors import VoiceEngineError
@@ -15,12 +18,39 @@ from services.protocol import ProtocolValidationError, ProtocolValidator
 protocol_validator = ProtocolValidator()
 BRUSH_STROKE_SCHEMA = "types/brush_stroke_v1.schema.json"
 
+REQUEST_COUNTER = Counter(
+    "opencommotion_orchestrator_http_requests_total",
+    "Total orchestrator HTTP requests",
+    ["method", "path", "status"],
+)
+REQUEST_LATENCY = Histogram(
+    "opencommotion_orchestrator_http_latency_seconds",
+    "Orchestrator request latency",
+    ["method", "path"],
+    buckets=(0.01, 0.03, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0),
+)
+ORCHESTRATE_LATENCY = Histogram(
+    "opencommotion_orchestrator_turn_latency_seconds",
+    "Orchestrator turn latency",
+    buckets=(0.05, 0.1, 0.2, 0.5, 1.0, 2.5, 5.0, 10.0, 20.0),
+)
+
 class OrchestrateRequest(BaseModel):
     session_id: str
     prompt: str
 
 
 app = FastAPI(title="OpenCommotion Orchestrator", version="0.5.0")
+
+
+@app.middleware("http")
+async def metrics_middleware(request, call_next):  # type: ignore[override]
+    started = perf_counter()
+    response = await call_next(request)
+    duration_s = perf_counter() - started
+    REQUEST_COUNTER.labels(method=request.method, path=request.url.path, status=str(response.status_code)).inc()
+    REQUEST_LATENCY.labels(method=request.method, path=request.url.path).observe(duration_s)
+    return response
 
 
 @app.get("/health")
@@ -32,6 +62,11 @@ def health() -> dict:
     }
 
 
+@app.get("/metrics")
+def metrics() -> Response:
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
 @app.get("/v1/llm/capabilities")
 def llm_runtime_capabilities() -> dict:
     return llm_capabilities(probe=True)
@@ -41,6 +76,7 @@ def llm_runtime_capabilities() -> dict:
 def orchestrate(req: OrchestrateRequest) -> dict:
     if len(req.prompt) > 4000:
         raise HTTPException(status_code=422, detail={"error": "prompt_too_long", "max_chars": 4000})
+    started = perf_counter()
 
     try:
         text = generate_text_response(req.prompt)
@@ -92,7 +128,7 @@ def orchestrate(req: OrchestrateRequest) -> dict:
         ]
     )
 
-    return {
+    payload = {
         "session_id": req.session_id,
         "turn_id": str(uuid4()),
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -101,3 +137,5 @@ def orchestrate(req: OrchestrateRequest) -> dict:
         "voice": voice,
         "timeline": {"duration_ms": duration_ms},
     }
+    ORCHESTRATE_LATENCY.observe(perf_counter() - started)
+    return payload

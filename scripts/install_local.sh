@@ -24,6 +24,6 @@ fi
 
 echo "Install complete."
 echo "Next steps:"
-echo "  1) make setup-wizard"
-echo "  2) make run"
+echo "  1) python3 scripts/opencommotion.py setup"
+echo "  2) python3 scripts/opencommotion.py run"
 echo "  3) open http://127.0.0.1:8000"

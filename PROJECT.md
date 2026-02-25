@@ -1,81 +1,93 @@
 Project: OpenCommotion
 
-Updated: 2026-02-24
+Updated: 2026-02-25
 
 Source of truth:
-- This file is the active implementation plan and status tracker.
-- Do not treat any other file as project completion status.
+- This file is the active implementation plan + status tracker.
+- Do not treat other files as completion state.
 
 Current status:
 - Overall project status: in progress
-- Production readiness sign-off: pending
+- Production readiness sign-off: pending final deployment validation
 - Latest verification run on this branch:
-  - `make test-complete`
-  - `make fresh-agent-e2e`
-  - `make voice-preflight`
+  - `python3 scripts/opencommotion.py test-complete`
+  - `python3 scripts/opencommotion.py fresh-agent-e2e`
+  - `python3 scripts/opencommotion.py doctor`
 
 Primary objectives:
-- Build a local-first visual orchestration platform with synchronized text, voice, and visual outputs.
-- Support reusable artifact memory with lexical + semantic recall.
-- Provide a stable integration surface for external agents and consumers.
+- Local-first visual orchestration with synchronized text, voice, and patch animation.
+- Stable integration surface for external agents and consumers.
+- Production-ready operations path for Linux VM deployment.
 
 Implemented baseline (available now):
 - Gateway (`services/gateway/app/main.py`)
-  - REST ingress + websocket event fanout
-  - Schema validation and stable error envelopes
-  - Voice, orchestrate, brush compile, and artifact lifecycle endpoints
+  - REST + websocket event fanout
+  - setup APIs (`/v1/setup/*`)
+  - autonomous run manager APIs (`/v1/agent-runs*`)
+  - auth middleware (API key + network-trust modes)
+  - Prometheus metrics endpoint (`/metrics`)
 - Orchestrator (`services/orchestrator/app/main.py`)
-  - Multi-channel turn assembly (text + voice + visual strokes)
-  - Timeline metadata composition
-- Brush engine (`services/brush_engine/opencommotion_brush/compiler.py`)
-  - Deterministic intent-to-patch compilation
-- Artifact registry (`services/artifact_registry/opencommotion_artifacts/registry.py`)
-  - SQLite index + bundle manifests
-  - Lexical, semantic, and hybrid recall
-  - Pin/archive lifecycle support
-- UI runtime (`apps/ui/src/App.tsx`, `apps/ui/src/runtime/sceneRuntime.ts`)
-  - Realtime websocket ingestion
-  - Patch-driven scene construction and playback controls
-  - Voice input upload + transcript-assisted turn flow
-- Protocol validation (`services/protocol/schema_validation.py`)
-  - Schema guardrails for strokes, patches, events, and artifact bundles
+  - multi-channel turn assembly
+  - LLM runtime capability probe
+  - Prometheus metrics endpoint
+- Text provider adapters (`services/agents/text/adapters.py`)
+  - `heuristic`, `ollama`, `openai-compatible`
+  - `codex-cli`, `openclaw-cli`, `openclaw-openai`
+- Voice workers (`services/agents/voice/*`)
+  - local STT/TTS engines
+  - OpenAI-compatible STT/TTS cloud path
+  - strict real-engine enforcement support
+- Agent runtime manager (`services/agent_runtime/manager.py`)
+  - durable SQLite run/queue state
+  - run controls (`run_once|pause|resume|stop|drain`)
+  - lifecycle websocket event emission
+- UI runtime (`apps/ui/src/App.tsx`)
+  - setup wizard UI
+  - run manager UI
+  - typed/voice/artifact flow with realtime playback
+- Deployment/ops assets
+  - production compose: `docker-compose.prod.yml`
+  - Dockerfiles: `docker/Dockerfile.*`
+  - reverse proxy + TLS config: `deploy/nginx/*`
+  - Prometheus/Grafana configs + dashboard: `deploy/prometheus/*`, `deploy/grafana/*`
+  - backup/restore scripts: `scripts/backup_runtime.sh`, `scripts/restore_runtime.sh`
 
 Progress checklist:
 - [x] End-to-end typed turn path
-- [x] End-to-end voice + visual turn path (with configurable engine policy)
-- [x] Configurable LLM provider path (`heuristic`/`ollama`/`openai-compatible`) with runtime capabilities API
-- [x] Guided setup wizard for LLM/STT/TTS configuration (`make setup-wizard`)
-- [x] Install-and-run path without local UI build (`scripts/install_local.sh` + `make run`)
-- [x] Schema validation enforcement in runtime services
-- [x] UI realtime patch playback
-- [x] Artifact memory lifecycle + hybrid recall
-- [x] Gate commands and CI checks wired (`test/e2e/security/perf`)
-- [ ] Production deployment hardening (network/TLS/secrets/runtime config policy)
-- [ ] Observability baseline (structured logs, metrics, alert routing)
-- [ ] Soak and recovery evidence (long-running/restart/disconnect scenarios)
+- [x] End-to-end voice + visual turn path
+- [x] Extended LLM provider path (Codex/OpenClaw included)
+- [x] Hybrid local+cloud voice policy
+- [x] Setup APIs + UI wizard + CLI fallback
+- [x] Autonomous backend run manager with websocket lifecycle events
+- [x] API-key auth baseline + optional network-trust mode
+- [x] Prometheus metrics endpoints and Grafana dashboard assets
+- [x] Production compose + TLS reverse-proxy scaffolding
+- [x] Backup/restore scripts for runtime/artifact state
+- [x] CI + test coverage updates for new surfaces
+- [x] Automated restart-recovery and 10-session concurrency gate coverage
+- [x] Provider adapter execution tests for Codex/OpenClaw paths
+- [ ] Long-haul soak/recovery evidence in production-like environment
 - [ ] Final production readiness sign-off
 
 Active tasks:
-1. Finalize voice engine provisioning for production environments.
- - Pin chosen STT/TTS engine + model artifacts per environment.
- - Validate strict mode (`OPENCOMMOTION_VOICE_REQUIRE_REAL_ENGINES=true`) in deployment target.
-2. Harden deployment path.
- - Define reverse proxy/TLS baseline and secret handling.
- - Add documented backup/restore steps for artifacts DB + bundles.
-3. Add operational confidence checks.
- - Add restart/reconnect reliability tests.
- - Add basic runtime metrics and failure dashboards.
-4. Keep docs synchronized after each change.
- - Update `README.md`, `docs/AGENT_CONNECTION.md`, and `docs/USAGE_PATTERNS.md` with each behavior change.
+1. Production soak + recovery validation:
+ - run 10-session concurrency soak in deployment target
+ - verify restart behavior during in-flight run queues
+2. Ops hardening closeout:
+ - wire alert delivery targets for Prometheus rules
+ - replace default dev keys/certs with production secrets + cert automation
+3. Final release package:
+ - publish release notes + version tag
+ - capture final acceptance evidence bundle
 
 Validation commands:
-- `make test-all`
-- `make test-e2e`
-- `make security-checks`
-- `make perf-checks`
-- `make test-complete`
-- `make fresh-agent-e2e`
-- `make voice-preflight`
+- `python3 scripts/opencommotion.py test`
+- `python3 scripts/opencommotion.py test-ui`
+- `python3 scripts/opencommotion.py test-e2e`
+- `python3 scripts/opencommotion.py test-complete`
+- `python3 scripts/opencommotion.py fresh-agent-e2e`
+- `python3 scripts/opencommotion.py preflight`
+- `python3 scripts/opencommotion.py doctor`
 
 Execution docs:
 - `README.md`
@@ -94,8 +106,12 @@ Agent assets:
   - `runtime/orchestrator/workflow_opencommotion_v2_plan.json`
 
 Change log:
-- 2026-02-24: Removed standalone legacy status-plan tracking and consolidated active plan into `PROJECT.md`.
-- 2026-02-24: Added strict voice engine policy and preflight visibility.
-- 2026-02-24: Added schema validator migration away from deprecated resolver path.
-- 2026-02-24: Added guided setup wizard and runtime capability visibility for user-selected LLM/STT/TTS stacks.
-- 2026-02-24: Added runtime distribution mode that serves prebuilt UI from gateway for install-and-run UX.
+- 2026-02-25: Added no-make operator CLI expansion (test/e2e/doctor/quickstart) and fixed PYTHONPATH preflight path.
+- 2026-02-25: Added LLM adapters for `codex-cli`, `openclaw-cli`, and `openclaw-openai`.
+- 2026-02-25: Added OpenAI-compatible STT/TTS support in voice workers.
+- 2026-02-25: Added setup APIs and backend autonomous run manager APIs/events.
+- 2026-02-25: Added API-key/network-trust auth middleware and Prometheus metrics.
+- 2026-02-25: Added production deployment assets (compose, Dockerfiles, proxy, Prometheus, Grafana) and backup/restore scripts.
+- 2026-02-25: Added automated restart-recovery + 10-session run-manager concurrency tests.
+- 2026-02-25: Added provider execution tests for `codex-cli`, `openclaw-cli`, and `openclaw-openai`.
+- 2026-02-25: Added websocket auth enforcement tests and run-control lifecycle coverage.

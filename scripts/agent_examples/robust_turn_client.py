@@ -4,7 +4,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 from dataclasses import dataclass
+from urllib.parse import urlencode
 
 import httpx
 import websockets
@@ -16,6 +18,7 @@ class ClientConfig:
     orchestrator: str
     session_id: str
     prompt: str
+    api_key: str
     health_attempts: int
     rest_retries: int
     ws_timeout: float
@@ -23,12 +26,16 @@ class ClientConfig:
     search: str
 
 
-def _ws_url(gateway: str) -> str:
-    return gateway.replace("http://", "ws://").replace("https://", "wss://").rstrip("/") + "/v1/events/ws"
+def _ws_url(gateway: str, api_key: str) -> str:
+    base = gateway.replace("http://", "ws://").replace("https://", "wss://").rstrip("/") + "/v1/events/ws"
+    if not api_key:
+        return base
+    return f"{base}?{urlencode({'api_key': api_key})}"
 
 
-async def wait_for_health(gateway: str, orchestrator: str, attempts: int) -> None:
-    async with httpx.AsyncClient(timeout=2.0) as client:
+async def wait_for_health(gateway: str, orchestrator: str, attempts: int, api_key: str) -> None:
+    headers = {"x-api-key": api_key} if api_key else {}
+    async with httpx.AsyncClient(timeout=2.0, headers=headers) as client:
         for attempt in range(1, attempts + 1):
             ok = False
             try:
@@ -111,13 +118,19 @@ async def run(config: ClientConfig) -> None:
     gateway = config.gateway.rstrip("/")
     orchestrator = config.orchestrator.rstrip("/")
 
-    await wait_for_health(gateway=gateway, orchestrator=orchestrator, attempts=config.health_attempts)
+    await wait_for_health(
+        gateway=gateway,
+        orchestrator=orchestrator,
+        attempts=config.health_attempts,
+        api_key=config.api_key,
+    )
 
-    ws_url = _ws_url(gateway)
+    ws_url = _ws_url(gateway, config.api_key)
     async with websockets.connect(ws_url, ping_interval=10, ping_timeout=10) as ws:
         await ws.send("ping")
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        headers = {"x-api-key": config.api_key} if config.api_key else {}
+        async with httpx.AsyncClient(timeout=30.0, headers=headers) as client:
             rest_turn = await post_orchestrate_with_retry(
                 client=client,
                 gateway=gateway,
@@ -182,6 +195,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--orchestrator", default="http://127.0.0.1:8001")
     parser.add_argument("--session", default="agent-robust-demo")
     parser.add_argument("--prompt", default="moonwalk adoption chart with voice")
+    parser.add_argument(
+        "--api-key",
+        default=os.getenv("OPENCOMMOTION_GATEWAY_API_KEY", os.getenv("OPENCOMMOTION_API_KEY", "dev-opencommotion-key")),
+    )
     parser.add_argument("--health-attempts", type=int, default=12)
     parser.add_argument("--rest-retries", type=int, default=3)
     parser.add_argument("--ws-timeout", type=float, default=20.0)
@@ -197,6 +214,7 @@ def main() -> None:
         orchestrator=args.orchestrator,
         session_id=args.session,
         prompt=args.prompt,
+        api_key=args.api_key,
         health_attempts=args.health_attempts,
         rest_retries=args.rest_retries,
         ws_timeout=args.ws_timeout,

@@ -4,28 +4,47 @@ import asyncio
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from time import perf_counter
 from uuid import uuid4
 
 import httpx
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from services.agent_runtime.manager import AgentRunManager
 from services.agents.voice.errors import VoiceEngineError
 from services.agents.voice.stt.worker import stt_capabilities, transcribe_audio
 from services.agents.voice.tts.worker import synthesize_segments, tts_capabilities
 from services.artifact_registry.opencommotion_artifacts.registry import ArtifactRegistry
 from services.brush_engine.opencommotion_brush.compiler import compile_brush_batch
+from services.config.runtime_config import (
+    EDITABLE_KEYS,
+    ENV_PATH,
+    masked_state,
+    normalized_editable,
+    parse_env,
+    validate_setup,
+    write_env,
+)
+from services.gateway.app.metrics import (
+    metrics_response,
+    record_http,
+    record_orchestrate,
+    record_provider_error,
+    set_run_metrics,
+)
+from services.gateway.app.security import enforce_http_auth, get_security_state, websocket_authorized
 from services.protocol import ProtocolValidationError, ProtocolValidator
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://127.0.0.1:8001")
-VOICE_AUDIO_ROOT = Path(
-    os.getenv("OPENCOMMOTION_AUDIO_ROOT", str(PROJECT_ROOT / "data" / "audio"))
-)
-UI_DIST_ROOT = Path(
-    os.getenv("OPENCOMMOTION_UI_DIST_ROOT", str(PROJECT_ROOT / "apps" / "ui" / "dist"))
+VOICE_AUDIO_ROOT = Path(os.getenv("OPENCOMMOTION_AUDIO_ROOT", str(PROJECT_ROOT / "data" / "audio")))
+UI_DIST_ROOT = Path(os.getenv("OPENCOMMOTION_UI_DIST_ROOT", str(PROJECT_ROOT / "apps" / "ui" / "dist")))
+AGENT_RUN_DB_PATH = Path(
+    os.getenv("OPENCOMMOTION_AGENT_RUN_DB_PATH", str(PROJECT_ROOT / "runtime" / "agent-runs" / "agent_manager.db"))
 )
 VOICE_AUDIO_ROOT.mkdir(parents=True, exist_ok=True)
 
@@ -64,6 +83,29 @@ class VoiceSynthesizeRequest(BaseModel):
     voice: str = "opencommotion-local"
 
 
+class SetupValidateRequest(BaseModel):
+    values: dict[str, str] = Field(default_factory=dict)
+
+
+class SetupStateRequest(BaseModel):
+    values: dict[str, str] = Field(default_factory=dict)
+
+
+class AgentRunCreateRequest(BaseModel):
+    label: str = "default"
+    session_id: str | None = None
+    run_id: str | None = None
+    auto_run: bool = True
+
+
+class AgentRunEnqueueRequest(BaseModel):
+    prompt: str
+
+
+class AgentRunControlRequest(BaseModel):
+    action: str
+
+
 class WsManager:
     def __init__(self) -> None:
         self.connections: set[WebSocket] = set()
@@ -76,19 +118,41 @@ class WsManager:
         self.connections.discard(websocket)
 
     async def broadcast(self, event: dict) -> None:
+        await self.broadcast_typed(
+            event_type="gateway.event",
+            payload=event,
+            session_id=event.get("session_id", "unknown-session"),
+            turn_id=event.get("turn_id", str(uuid4())),
+            actor="gateway",
+        )
+
+    async def broadcast_typed(
+        self,
+        event_type: str,
+        payload: dict,
+        session_id: str,
+        turn_id: str,
+        actor: str = "gateway",
+    ) -> None:
         if not self.connections:
             return
-        wrapped = _wrap_base_event(event)
-        _validate_or_422(wrapped, BASE_EVENT_SCHEMA, context="ws.gateway.event")
+        wrapped = _wrap_base_event(
+            event_type=event_type,
+            payload=payload,
+            session_id=session_id,
+            turn_id=turn_id,
+            actor=actor,
+        )
+        _validate_or_422(wrapped, BASE_EVENT_SCHEMA, context=f"ws.{event_type}")
         await asyncio.gather(*(ws.send_json(wrapped) for ws in self.connections), return_exceptions=True)
 
 
-def _wrap_base_event(payload: dict) -> dict:
+def _wrap_base_event(event_type: str, payload: dict, session_id: str, turn_id: str, actor: str) -> dict:
     return {
-        "event_type": "gateway.event",
-        "session_id": payload.get("session_id", "unknown-session"),
-        "turn_id": payload.get("turn_id", str(uuid4())),
-        "actor": "gateway",
+        "event_type": event_type,
+        "session_id": session_id,
+        "turn_id": turn_id,
+        "actor": actor,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "payload": payload,
     }
@@ -152,7 +216,7 @@ def _validate_orchestrator_payload(result: dict) -> None:
     _validate_many(visual_strokes, BRUSH_STROKE_SCHEMA, context_prefix="orchestrator.visual_strokes")
 
 
-app = FastAPI(title="OpenCommotion Gateway", version="0.5.0")
+app = FastAPI(title="OpenCommotion Gateway", version="0.6.0")
 app.mount("/v1/audio", StaticFiles(directory=str(VOICE_AUDIO_ROOT)), name="opencommotion-audio")
 
 app.add_middleware(
@@ -164,6 +228,148 @@ app.add_middleware(
 
 registry = ArtifactRegistry()
 ws_manager = WsManager()
+_run_manager: AgentRunManager | None = None
+
+
+@app.middleware("http")
+async def security_and_metrics(request: Request, call_next):  # type: ignore[override]
+    started = perf_counter()
+    status_code = 500
+    try:
+        enforce_http_auth(request)
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    except HTTPException as exc:
+        status_code = exc.status_code
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    finally:
+        duration_s = perf_counter() - started
+        record_http(
+            method=request.method,
+            path=request.url.path,
+            status_code=status_code,
+            duration_s=duration_s,
+        )
+
+
+def _build_setup_state() -> dict[str, str]:
+    values = parse_env(ENV_PATH)
+    for key in EDITABLE_KEYS:
+        if key not in values and key in os.environ:
+            values[key] = os.getenv(key, "")
+    return values
+
+
+def _apply_setup_values(values: dict[str, str]) -> None:
+    for key, value in values.items():
+        os.environ[key] = value
+
+
+async def _emit_agent_runtime_event(event_type: str, payload: dict) -> None:
+    session_id = str(payload.get("session_id", payload.get("run_id", "agent-runtime")))
+    turn_id = str(payload.get("turn_id", payload.get("queue_id", uuid4())))
+    await ws_manager.broadcast_typed(
+        event_type=event_type,
+        payload=payload,
+        session_id=session_id,
+        turn_id=turn_id,
+        actor="agent-runtime",
+    )
+    if event_type == "agent.run.state":
+        state = payload.get("state", {})
+        if isinstance(state, dict):
+            queue = state.get("queue", {})
+            queued = int(queue.get("queued", 0)) if isinstance(queue, dict) else 0
+            set_run_metrics(
+                run_id=str(state.get("run_id", payload.get("run_id", "unknown"))),
+                queued=queued,
+                status=str(state.get("status", "unknown")),
+            )
+
+
+async def _execute_turn(session_id: str, prompt: str, source: str) -> dict:
+    if len(prompt) > 4000:
+        raise HTTPException(status_code=422, detail={"error": "prompt_too_long", "max_chars": 4000})
+
+    started = perf_counter()
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.post(
+                f"{ORCHESTRATOR_URL}/v1/orchestrate",
+                json={"session_id": session_id, "prompt": prompt},
+            )
+        resp.raise_for_status()
+        result = resp.json()
+    except httpx.HTTPStatusError as exc:
+        details: dict | str
+        provider = "orchestrator"
+        err_type = "http_status"
+        try:
+            payload = exc.response.json()
+            details = payload.get("detail", payload)
+            if isinstance(details, dict):
+                provider = str(details.get("provider", details.get("engine", provider)))
+                err_type = str(details.get("error", err_type))
+        except ValueError:
+            details = {
+                "error": "orchestrator_http_error",
+                "status_code": exc.response.status_code,
+                "message": exc.response.text,
+            }
+        record_provider_error(provider=provider, error_type=err_type)
+        raise HTTPException(status_code=exc.response.status_code, detail=details) from exc
+    except httpx.HTTPError as exc:
+        record_provider_error(provider="orchestrator", error_type="unreachable")
+        raise HTTPException(
+            status_code=502,
+            detail={"error": "orchestrator_unreachable", "message": str(exc)},
+        ) from exc
+
+    _validate_orchestrator_payload(result)
+
+    visual_strokes = result.get("visual_strokes", [])
+    patches = compile_brush_batch(visual_strokes)
+    _validate_many(patches, SCENE_PATCH_SCHEMA, context_prefix="orchestrate.visual_patches")
+
+    voice = result.get("voice", {})
+    event = {
+        "session_id": result["session_id"],
+        "turn_id": result["turn_id"],
+        "timestamp": result.get("timestamp", datetime.now(timezone.utc).isoformat()),
+        "text": result["text"],
+        "voice": voice,
+        "visual_strokes": visual_strokes,
+        "visual_patches": patches,
+        "timeline": {
+            "duration_ms": _timeline_duration_ms(visual_strokes=visual_strokes, voice=voice),
+        },
+    }
+    await ws_manager.broadcast(event)
+    record_orchestrate(duration_s=perf_counter() - started, source=source)
+    return event
+
+
+def _get_run_manager() -> AgentRunManager:
+    global _run_manager
+    if _run_manager is None:
+        _run_manager = AgentRunManager(
+            db_path=AGENT_RUN_DB_PATH,
+            turn_executor=lambda session_id, prompt: _execute_turn(session_id=session_id, prompt=prompt, source="agent-run"),
+            event_emitter=_emit_agent_runtime_event,
+        )
+    return _run_manager
+
+
+@app.on_event("startup")
+async def startup_event() -> None:
+    await _get_run_manager().start()
+
+
+@app.on_event("shutdown")
+async def shutdown_event() -> None:
+    manager = _get_run_manager()
+    await manager.stop()
 
 
 @app.get("/health")
@@ -175,8 +381,17 @@ def health() -> dict:
     }
 
 
+@app.get("/metrics")
+def metrics() -> Response:
+    payload, content_type = metrics_response()
+    return Response(content=payload, media_type=content_type)
+
+
 @app.websocket("/v1/events/ws")
 async def events_ws(websocket: WebSocket) -> None:
+    if not websocket_authorized(websocket):
+        await websocket.close(code=4401)
+        return
     await ws_manager.connect(websocket)
     try:
         while True:
@@ -205,6 +420,7 @@ async def transcribe_voice(
     try:
         transcript = transcribe_audio(audio_bytes, hint=hint)
     except VoiceEngineError as exc:
+        record_provider_error(provider=str(exc.engine), error_type="stt_engine_unavailable")
         raise HTTPException(
             status_code=503,
             detail={
@@ -223,6 +439,7 @@ def synthesize_voice(req: VoiceSynthesizeRequest) -> dict:
     try:
         voice = synthesize_segments(req.text, voice=req.voice)
     except VoiceEngineError as exc:
+        record_provider_error(provider=str(exc.engine), error_type="tts_engine_unavailable")
         raise HTTPException(
             status_code=503,
             detail={
@@ -257,12 +474,57 @@ async def runtime_capabilities() -> dict:
     except httpx.HTTPError as exc:
         llm_payload["message"] = str(exc)
 
+    security = get_security_state()
     return {
         "llm": llm_payload,
         "voice": {
             "stt": stt_capabilities(),
             "tts": tts_capabilities(),
         },
+        "security": {
+            "mode": security.mode,
+            "enforcement_active": security.enforcement_active,
+            "api_keys_configured": len(security.api_keys),
+            "allowed_ips_configured": len(security.allowed_ips),
+        },
+    }
+
+
+@app.get("/v1/setup/state")
+def setup_state() -> dict:
+    values = _build_setup_state()
+    return {
+        "state": masked_state(values),
+        "editable_keys": sorted(EDITABLE_KEYS),
+    }
+
+
+@app.post("/v1/setup/validate")
+def setup_validate(req: SetupValidateRequest) -> dict:
+    current = _build_setup_state()
+    incoming = normalized_editable(req.values)
+    merged = {**current, **incoming}
+    result = validate_setup(merged)
+    return {"ok": result["ok"], "errors": result["errors"], "warnings": result["warnings"]}
+
+
+@app.post("/v1/setup/state")
+def setup_save(req: SetupStateRequest) -> dict:
+    current = _build_setup_state()
+    incoming = normalized_editable(req.values)
+    merged = {**current, **incoming}
+    validation = validate_setup(merged)
+    if not validation["ok"]:
+        raise HTTPException(status_code=422, detail={"error": "invalid_setup", **validation})
+
+    ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
+    write_env(ENV_PATH, merged)
+    _apply_setup_values(incoming)
+    return {
+        "ok": True,
+        "restart_required": True,
+        "saved_keys": sorted(incoming.keys()),
+        "warnings": validation["warnings"],
     }
 
 
@@ -322,56 +584,80 @@ def archive_artifact(artifact_id: str, req: ArtifactToggleRequest) -> dict:
 
 @app.post("/v1/orchestrate")
 async def orchestrate(req: OrchestrateRequest) -> dict:
-    if len(req.prompt) > 4000:
-        raise HTTPException(status_code=422, detail={"error": "prompt_too_long", "max_chars": 4000})
+    return await _execute_turn(session_id=req.session_id, prompt=req.prompt, source="api")
 
-    try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.post(
-                f"{ORCHESTRATOR_URL}/v1/orchestrate",
-                json={"session_id": req.session_id, "prompt": req.prompt},
-            )
-        resp.raise_for_status()
-        result = resp.json()
-    except httpx.HTTPStatusError as exc:
-        details: dict | str
-        try:
-            payload = exc.response.json()
-            details = payload.get("detail", payload)
-        except ValueError:
-            details = {
-                "error": "orchestrator_http_error",
-                "status_code": exc.response.status_code,
-                "message": exc.response.text,
-            }
-        raise HTTPException(status_code=exc.response.status_code, detail=details) from exc
-    except httpx.HTTPError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail={"error": "orchestrator_unreachable", "message": str(exc)},
-        ) from exc
 
-    _validate_orchestrator_payload(result)
-
-    visual_strokes = result.get("visual_strokes", [])
-    patches = compile_brush_batch(visual_strokes)
-    _validate_many(patches, SCENE_PATCH_SCHEMA, context_prefix="orchestrate.visual_patches")
-
-    voice = result.get("voice", {})
-    event = {
-        "session_id": result["session_id"],
-        "turn_id": result["turn_id"],
-        "timestamp": result.get("timestamp", datetime.now(timezone.utc).isoformat()),
-        "text": result["text"],
-        "voice": voice,
-        "visual_strokes": visual_strokes,
-        "visual_patches": patches,
-        "timeline": {
-            "duration_ms": _timeline_duration_ms(visual_strokes=visual_strokes, voice=voice),
+@app.post("/v1/agent-runs")
+async def create_agent_run(req: AgentRunCreateRequest) -> dict:
+    manager = _get_run_manager()
+    run = manager.create_run(
+        label=req.label,
+        session_id=req.session_id,
+        run_id=req.run_id,
+        auto_run=req.auto_run,
+    )
+    await _emit_agent_runtime_event(
+        "agent.run.state",
+        {
+            "run_id": run["run_id"],
+            "session_id": run["session_id"],
+            "reason": "created",
+            "state": run,
         },
-    }
-    await ws_manager.broadcast(event)
-    return event
+    )
+    return {"ok": True, "run": run}
+
+
+@app.get("/v1/agent-runs")
+def list_agent_runs() -> dict:
+    manager = _get_run_manager()
+    return {"runs": manager.list_runs()}
+
+
+@app.get("/v1/agent-runs/{run_id}")
+def get_agent_run(run_id: str) -> dict:
+    manager = _get_run_manager()
+    try:
+        run = manager.get_run(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail={"error": "run_not_found", "run_id": run_id}) from exc
+    return {"run": run}
+
+
+@app.post("/v1/agent-runs/{run_id}/enqueue")
+async def enqueue_agent_run(run_id: str, req: AgentRunEnqueueRequest) -> dict:
+    manager = _get_run_manager()
+    try:
+        item = manager.enqueue(run_id=run_id, prompt=req.prompt)
+        run = manager.get_run(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail={"error": "run_not_found", "run_id": run_id}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"error": "invalid_prompt", "message": str(exc)}) from exc
+
+    await _emit_agent_runtime_event(
+        "agent.run.state",
+        {
+            "run_id": run_id,
+            "session_id": run["session_id"],
+            "reason": "enqueue",
+            "state": run,
+            "item": item,
+        },
+    )
+    return {"ok": True, "item": item, "run": run}
+
+
+@app.post("/v1/agent-runs/{run_id}/control")
+async def control_agent_run(run_id: str, req: AgentRunControlRequest) -> dict:
+    manager = _get_run_manager()
+    try:
+        run = await manager.control(run_id=run_id, action=req.action)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail={"error": "run_not_found", "run_id": run_id}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"error": "invalid_action", "message": str(exc)}) from exc
+    return {"ok": True, "run": run}
 
 
 if (UI_DIST_ROOT / "index.html").exists():

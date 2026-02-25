@@ -1,0 +1,82 @@
+services:
+  orchestrator:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.orchestrator
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /app
+    restart: unless-stopped
+    expose:
+      - "8001"
+    volumes:
+      - opencommotion-data:/app/data
+      - opencommotion-runtime:/app/runtime
+
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gateway
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /app
+      ORCHESTRATOR_URL: http://orchestrator:8001
+    restart: unless-stopped
+    depends_on:
+      - orchestrator
+    expose:
+      - "8000"
+    volumes:
+      - opencommotion-data:/app/data
+      - opencommotion-runtime:/app/runtime
+
+  reverse-proxy:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - gateway
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/opencommotion.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/nginx/certs:/etc/nginx/certs:ro
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    restart: unless-stopped
+    depends_on:
+      - gateway
+      - orchestrator
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
+      - opencommotion-prometheus:/prometheus
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - opencommotion-grafana:/var/lib/grafana
+
+volumes:
+  opencommotion-data:
+  opencommotion-runtime:
+  opencommotion-prometheus:
+  opencommotion-grafana:

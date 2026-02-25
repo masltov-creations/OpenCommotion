@@ -54,8 +54,36 @@ type RuntimeCapabilities = {
   }
 }
 
+type SetupStateResponse = {
+  state: Record<string, string>
+  editable_keys: string[]
+}
+
+type SetupValidateResponse = {
+  ok: boolean
+  errors: string[]
+  warnings: string[]
+}
+
+type AgentRun = {
+  run_id: string
+  session_id: string
+  label: string
+  status: string
+  auto_run: boolean
+  last_error: string
+  queue?: {
+    queued: number
+    processing: number
+    done: number
+    error: number
+  }
+}
+
 const gateway = (import.meta as { env?: Record<string, string> }).env?.VITE_GATEWAY_URL || 'http://127.0.0.1:8000'
 const wsGateway = gateway.replace(/^http/i, 'ws')
+const gatewayApiKey =
+  (import.meta as { env?: Record<string, string> }).env?.VITE_GATEWAY_API_KEY || 'dev-opencommotion-key'
 const isTestMode = (import.meta as { env?: Record<string, string> }).env?.MODE === 'test'
 
 function calcDurationMs(turn: TurnResult): number {
@@ -112,8 +140,25 @@ export default function App() {
   const [runtimeCaps, setRuntimeCaps] = useState<RuntimeCapabilities | null>(null)
   const [capsLoading, setCapsLoading] = useState(false)
   const [capsError, setCapsError] = useState('')
+  const [setupStep, setSetupStep] = useState(1)
+  const [setupDraft, setSetupDraft] = useState<Record<string, string>>({})
+  const [setupErrors, setSetupErrors] = useState<string[]>([])
+  const [setupWarnings, setSetupWarnings] = useState<string[]>([])
+  const [setupLoading, setSetupLoading] = useState(false)
+  const [setupSaving, setSetupSaving] = useState(false)
+  const [setupMessage, setSetupMessage] = useState('')
+  const [runs, setRuns] = useState<AgentRun[]>([])
+  const [selectedRunId, setSelectedRunId] = useState('')
+  const [queuedPrompt, setQueuedPrompt] = useState('autonomous turn: continue narrative and visuals')
+  const [runActionLoading, setRunActionLoading] = useState(false)
 
   const session = useMemo(() => `sess-${Math.random().toString(36).slice(2)}`, [])
+  const authHeaders = useMemo(() => {
+    if (!gatewayApiKey) {
+      return {}
+    }
+    return { 'x-api-key': gatewayApiKey }
+  }, [])
   const lastTurnRef = useRef('')
 
   const refreshRuntimeCapabilities = useCallback(async () => {
@@ -123,7 +168,7 @@ export default function App() {
     setCapsLoading(true)
     setCapsError('')
     try {
-      const res = await fetch(`${gateway}/v1/runtime/capabilities`)
+      const res = await fetch(`${gateway}/v1/runtime/capabilities`, { headers: authHeaders })
       if (!res.ok) {
         throw new Error(`runtime capabilities failed (${res.status})`)
       }
@@ -135,7 +180,172 @@ export default function App() {
     } finally {
       setCapsLoading(false)
     }
-  }, [])
+  }, [authHeaders])
+
+  const loadSetupState = useCallback(async () => {
+    if (isTestMode) {
+      return
+    }
+    setSetupLoading(true)
+    try {
+      const res = await fetch(`${gateway}/v1/setup/state`, { headers: authHeaders })
+      if (!res.ok) {
+        throw new Error(`setup state failed (${res.status})`)
+      }
+      const data = (await res.json()) as SetupStateResponse
+      setSetupDraft(data.state || {})
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown setup state failure'
+      setLastError(msg)
+    } finally {
+      setSetupLoading(false)
+    }
+  }, [authHeaders])
+
+  function updateSetupDraft(key: string, value: string): void {
+    setSetupDraft((current) => ({ ...current, [key]: value }))
+  }
+
+  async function validateSetupDraft() {
+    setSetupErrors([])
+    setSetupWarnings([])
+    setSetupMessage('')
+    try {
+      const res = await fetch(`${gateway}/v1/setup/validate`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'content-type': 'application/json' },
+        body: JSON.stringify({ values: setupDraft }),
+      })
+      if (!res.ok) {
+        throw new Error(`setup validate failed (${res.status})`)
+      }
+      const data = (await res.json()) as SetupValidateResponse
+      setSetupErrors(data.errors || [])
+      setSetupWarnings(data.warnings || [])
+      if (data.ok) {
+        setSetupMessage('Setup validation passed.')
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown setup validate failure'
+      setLastError(msg)
+    }
+  }
+
+  async function saveSetupDraft() {
+    setSetupSaving(true)
+    setSetupMessage('')
+    try {
+      const res = await fetch(`${gateway}/v1/setup/state`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'content-type': 'application/json' },
+        body: JSON.stringify({ values: setupDraft }),
+      })
+      if (!res.ok) {
+        throw new Error(`setup save failed (${res.status})`)
+      }
+      const data = (await res.json()) as { ok: boolean; restart_required?: boolean; warnings?: string[] }
+      setSetupWarnings(data.warnings || [])
+      setSetupMessage(data.restart_required ? 'Setup saved. Restart stack to apply all changes.' : 'Setup saved.')
+      await refreshRuntimeCapabilities()
+      await refreshRuns()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown setup save failure'
+      setLastError(msg)
+    } finally {
+      setSetupSaving(false)
+    }
+  }
+
+  const refreshRuns = useCallback(async () => {
+    if (isTestMode) {
+      return
+    }
+    try {
+      const res = await fetch(`${gateway}/v1/agent-runs`, { headers: authHeaders })
+      if (!res.ok) {
+        throw new Error(`list runs failed (${res.status})`)
+      }
+      const data = (await res.json()) as { runs: AgentRun[] }
+      const rows = data.runs || []
+      setRuns(rows)
+      if (!selectedRunId && rows.length) {
+        setSelectedRunId(rows[0].run_id)
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown list-runs failure'
+      setLastError(msg)
+    }
+  }, [authHeaders, selectedRunId])
+
+  async function createRun() {
+    setRunActionLoading(true)
+    try {
+      const res = await fetch(`${gateway}/v1/agent-runs`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'content-type': 'application/json' },
+        body: JSON.stringify({ label: `run-${Date.now()}`, auto_run: true }),
+      })
+      if (!res.ok) {
+        throw new Error(`create run failed (${res.status})`)
+      }
+      const data = (await res.json()) as { run: AgentRun }
+      if (data.run?.run_id) {
+        setSelectedRunId(data.run.run_id)
+      }
+      await refreshRuns()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown create-run failure'
+      setLastError(msg)
+    } finally {
+      setRunActionLoading(false)
+    }
+  }
+
+  async function enqueueToRun() {
+    if (!selectedRunId) {
+      return
+    }
+    setRunActionLoading(true)
+    try {
+      const res = await fetch(`${gateway}/v1/agent-runs/${encodeURIComponent(selectedRunId)}/enqueue`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: queuedPrompt }),
+      })
+      if (!res.ok) {
+        throw new Error(`enqueue failed (${res.status})`)
+      }
+      await refreshRuns()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown enqueue failure'
+      setLastError(msg)
+    } finally {
+      setRunActionLoading(false)
+    }
+  }
+
+  async function controlRun(action: 'run_once' | 'pause' | 'resume' | 'stop' | 'drain') {
+    if (!selectedRunId) {
+      return
+    }
+    setRunActionLoading(true)
+    try {
+      const res = await fetch(`${gateway}/v1/agent-runs/${encodeURIComponent(selectedRunId)}/control`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'content-type': 'application/json' },
+        body: JSON.stringify({ action }),
+      })
+      if (!res.ok) {
+        throw new Error(`run control failed (${res.status})`)
+      }
+      await refreshRuns()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown run-control failure'
+      setLastError(msg)
+    } finally {
+      setRunActionLoading(false)
+    }
+  }
 
   function loadTurn(turn: TurnResult): void {
     if (!turn || turn.turn_id === lastTurnRef.current) {
@@ -158,7 +368,7 @@ export default function App() {
     try {
       const res = await fetch(`${gateway}/v1/orchestrate`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { ...authHeaders, 'content-type': 'application/json' },
         body: JSON.stringify({ session_id: session, prompt }),
       })
       if (!res.ok) {
@@ -186,6 +396,7 @@ export default function App() {
 
       const res = await fetch(`${gateway}/v1/voice/transcribe`, {
         method: 'POST',
+        headers: authHeaders,
         body,
       })
       if (!res.ok) {
@@ -210,7 +421,7 @@ export default function App() {
     try {
       const res = await fetch(`${gateway}/v1/artifacts/save`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { ...authHeaders, 'content-type': 'application/json' },
         body: JSON.stringify({
           title: `Turn ${new Date().toLocaleTimeString()}`,
           summary: text,
@@ -232,6 +443,7 @@ export default function App() {
     try {
       const res = await fetch(
         `${gateway}/v1/artifacts/search?q=${encodeURIComponent(query)}&mode=${encodeURIComponent(searchMode)}`,
+        { headers: authHeaders },
       )
       if (!res.ok) {
         throw new Error(`search failed (${res.status})`)
@@ -269,7 +481,9 @@ export default function App() {
       return
     }
 
-    const ws = new WebSocket(`${wsGateway}/v1/events/ws`)
+    const ws = new WebSocket(
+      gatewayApiKey ? `${wsGateway}/v1/events/ws?api_key=${encodeURIComponent(gatewayApiKey)}` : `${wsGateway}/v1/events/ws`,
+    )
     const heartbeat = window.setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send('ping')
@@ -279,11 +493,24 @@ export default function App() {
     ws.onmessage = (event) => {
       try {
         const parsed = JSON.parse(event.data) as {
-          payload?: TurnResult
+          event_type?: string
+          payload?: unknown
           session_id?: string
           turn_id?: string
         }
-        const payload = parsed.payload
+        if (parsed.event_type === 'agent.run.state') {
+          void refreshRuns()
+          return
+        }
+        if (parsed.event_type === 'agent.turn.failed') {
+          setLastError('Agent run turn failed. Check run status for details.')
+          void refreshRuns()
+          return
+        }
+        if (parsed.event_type !== 'gateway.event') {
+          return
+        }
+        const payload = parsed.payload as TurnResult | undefined
         if (!payload) {
           return
         }
@@ -300,20 +527,26 @@ export default function App() {
       window.clearInterval(heartbeat)
       ws.close()
     }
-  }, [session])
+  }, [session, authHeaders, refreshRuns])
 
   useEffect(() => {
     if (isTestMode) {
       return
     }
     refreshRuntimeCapabilities()
+    loadSetupState()
+    refreshRuns()
     const timer = window.setInterval(() => {
       refreshRuntimeCapabilities()
     }, 12000)
+    const runTimer = window.setInterval(() => {
+      refreshRuns()
+    }, 6000)
     return () => {
       window.clearInterval(timer)
+      window.clearInterval(runTimer)
     }
-  }, [refreshRuntimeCapabilities])
+  }, [refreshRuntimeCapabilities, loadSetupState, refreshRuns])
 
   const scene = useMemo(() => buildScene(patches, playbackMs), [patches, playbackMs])
   const appliedCount = useMemo(
@@ -330,6 +563,7 @@ export default function App() {
   const llmReady = runtimeCaps?.llm?.effective_ready === true
   const sttEngine = runtimeCaps?.voice?.stt?.selected_engine || 'unknown'
   const ttsEngine = runtimeCaps?.voice?.tts?.selected_engine || 'unknown'
+  const selectedRun = runs.find((run) => run.run_id === selectedRunId) || null
 
   return (
     <div className="layout">
@@ -349,8 +583,153 @@ export default function App() {
             <button onClick={refreshRuntimeCapabilities} disabled={capsLoading}>
               {capsLoading ? 'Refreshing...' : 'Refresh Setup'}
             </button>
+            <button onClick={loadSetupState} disabled={setupLoading}>
+              {setupLoading ? 'Loading...' : 'Load Wizard'}
+            </button>
           </div>
-          <p className="muted">Need guided setup? Run `make setup-wizard` in your terminal.</p>
+          <p className="muted">Setup Wizard step {setupStep}/3</p>
+          <div className="row">
+            <button onClick={() => setSetupStep((current) => Math.max(1, current - 1))} disabled={setupStep <= 1}>
+              Previous
+            </button>
+            <button onClick={() => setSetupStep((current) => Math.min(3, current + 1))} disabled={setupStep >= 3}>
+              Next
+            </button>
+          </div>
+          {setupStep === 1 ? (
+            <div>
+              <label className="muted">LLM provider</label>
+              <select
+                value={setupDraft.OPENCOMMOTION_LLM_PROVIDER || 'ollama'}
+                onChange={(e) => updateSetupDraft('OPENCOMMOTION_LLM_PROVIDER', e.target.value)}
+              >
+                <option value="ollama">ollama</option>
+                <option value="openai-compatible">openai-compatible</option>
+                <option value="codex-cli">codex-cli</option>
+                <option value="openclaw-cli">openclaw-cli</option>
+                <option value="openclaw-openai">openclaw-openai</option>
+                <option value="heuristic">heuristic</option>
+              </select>
+              <label className="muted">Model</label>
+              <input
+                value={setupDraft.OPENCOMMOTION_LLM_MODEL || ''}
+                onChange={(e) => updateSetupDraft('OPENCOMMOTION_LLM_MODEL', e.target.value)}
+                placeholder="provider model"
+              />
+            </div>
+          ) : null}
+          {setupStep === 2 ? (
+            <div>
+              <label className="muted">STT engine</label>
+              <select
+                value={setupDraft.OPENCOMMOTION_STT_ENGINE || 'auto'}
+                onChange={(e) => updateSetupDraft('OPENCOMMOTION_STT_ENGINE', e.target.value)}
+              >
+                <option value="auto">auto</option>
+                <option value="faster-whisper">faster-whisper</option>
+                <option value="vosk">vosk</option>
+                <option value="openai-compatible">openai-compatible</option>
+                <option value="text-fallback">text-fallback</option>
+              </select>
+              <label className="muted">TTS engine</label>
+              <select
+                value={setupDraft.OPENCOMMOTION_TTS_ENGINE || 'auto'}
+                onChange={(e) => updateSetupDraft('OPENCOMMOTION_TTS_ENGINE', e.target.value)}
+              >
+                <option value="auto">auto</option>
+                <option value="piper">piper</option>
+                <option value="espeak">espeak</option>
+                <option value="openai-compatible">openai-compatible</option>
+                <option value="tone-fallback">tone-fallback</option>
+              </select>
+              <label className="muted">Strict real engines</label>
+              <select
+                value={setupDraft.OPENCOMMOTION_VOICE_REQUIRE_REAL_ENGINES || 'false'}
+                onChange={(e) => updateSetupDraft('OPENCOMMOTION_VOICE_REQUIRE_REAL_ENGINES', e.target.value)}
+              >
+                <option value="false">false</option>
+                <option value="true">true</option>
+              </select>
+            </div>
+          ) : null}
+          {setupStep === 3 ? (
+            <div>
+              <label className="muted">Auth mode</label>
+              <select
+                value={setupDraft.OPENCOMMOTION_AUTH_MODE || 'api-key'}
+                onChange={(e) => updateSetupDraft('OPENCOMMOTION_AUTH_MODE', e.target.value)}
+              >
+                <option value="api-key">api-key</option>
+                <option value="network-trust">network-trust</option>
+              </select>
+              <label className="muted">API keys (comma-separated)</label>
+              <input
+                value={setupDraft.OPENCOMMOTION_API_KEYS || ''}
+                onChange={(e) => updateSetupDraft('OPENCOMMOTION_API_KEYS', e.target.value)}
+                placeholder="dev-opencommotion-key"
+              />
+              <label className="muted">Allowed IP/CIDR list</label>
+              <input
+                value={setupDraft.OPENCOMMOTION_ALLOWED_IPS || ''}
+                onChange={(e) => updateSetupDraft('OPENCOMMOTION_ALLOWED_IPS', e.target.value)}
+                placeholder="127.0.0.1/32,::1/128"
+              />
+            </div>
+          ) : null}
+          <div className="row">
+            <button onClick={validateSetupDraft}>Validate Setup</button>
+            <button onClick={saveSetupDraft} disabled={setupSaving}>
+              {setupSaving ? 'Saving...' : 'Save Setup'}
+            </button>
+          </div>
+          {setupMessage ? <p className="muted">{setupMessage}</p> : null}
+          {setupWarnings.map((warning) => (
+            <p className="muted" key={warning}>{warning}</p>
+          ))}
+          {setupErrors.map((error) => (
+            <p className="error" key={error}>{error}</p>
+          ))}
+          <p className="muted">CLI fallback: `python3 scripts/opencommotion.py setup`</p>
+        </div>
+        <div className="setup-panel">
+          <h3>Agent Run Manager</h3>
+          <div className="row">
+            <button onClick={refreshRuns}>Refresh Runs</button>
+            <button onClick={createRun} disabled={runActionLoading}>Create Run</button>
+          </div>
+          <select
+            aria-label="run selector"
+            value={selectedRunId}
+            onChange={(e) => setSelectedRunId(e.target.value)}
+          >
+            <option value="">select run</option>
+            {runs.map((run) => (
+              <option value={run.run_id} key={run.run_id}>
+                {run.label} ({run.status})
+              </option>
+            ))}
+          </select>
+          {selectedRun ? (
+            <p className="muted">
+              queue: q={selectedRun.queue?.queued || 0} p={selectedRun.queue?.processing || 0} d={selectedRun.queue?.done || 0}
+              {' '}e={selectedRun.queue?.error || 0}
+            </p>
+          ) : null}
+          <input
+            value={queuedPrompt}
+            onChange={(e) => setQueuedPrompt(e.target.value)}
+            placeholder="queue prompt"
+          />
+          <div className="row">
+            <button onClick={enqueueToRun} disabled={!selectedRunId || runActionLoading}>Enqueue</button>
+            <button onClick={() => controlRun('run_once')} disabled={!selectedRunId || runActionLoading}>Run Once</button>
+            <button onClick={() => controlRun('drain')} disabled={!selectedRunId || runActionLoading}>Drain</button>
+          </div>
+          <div className="row">
+            <button onClick={() => controlRun('pause')} disabled={!selectedRunId || runActionLoading}>Pause</button>
+            <button onClick={() => controlRun('resume')} disabled={!selectedRunId || runActionLoading}>Resume</button>
+            <button onClick={() => controlRun('stop')} disabled={!selectedRunId || runActionLoading}>Stop</button>
+          </div>
         </div>
         <textarea rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
 

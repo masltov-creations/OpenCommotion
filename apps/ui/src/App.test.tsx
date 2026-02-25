@@ -70,6 +70,7 @@ describe('App', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
       'http://127.0.0.1:8000/v1/artifacts/search?q=moonwalk&mode=hybrid',
+      expect.objectContaining({ headers: expect.any(Object) }),
     )
     await screen.findByText('Moonwalk Demo')
   })

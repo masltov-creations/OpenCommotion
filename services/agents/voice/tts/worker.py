@@ -8,6 +8,8 @@ import wave
 from pathlib import Path
 from uuid import uuid4
 
+import httpx
+
 from services.agents.voice.common import normalized_env, require_real_voice_engines
 from services.agents.voice.errors import VoiceEngineError
 
@@ -20,9 +22,13 @@ PIPER_MODEL_ENV = "OPENCOMMOTION_PIPER_MODEL"
 PIPER_CONFIG_ENV = "OPENCOMMOTION_PIPER_CONFIG"
 ESPEAK_BIN_ENV = "OPENCOMMOTION_ESPEAK_BIN"
 ESPEAK_RATE_ENV = "OPENCOMMOTION_ESPEAK_RATE"
+VOICE_OPENAI_BASE_URL_ENV = "OPENCOMMOTION_VOICE_OPENAI_BASE_URL"
+VOICE_OPENAI_API_KEY_ENV = "OPENCOMMOTION_VOICE_OPENAI_API_KEY"
+VOICE_OPENAI_TTS_MODEL_ENV = "OPENCOMMOTION_VOICE_TTS_MODEL"
+VOICE_OPENAI_TIMEOUT_ENV = "OPENCOMMOTION_VOICE_OPENAI_TIMEOUT_S"
 
-VALID_TTS_ENGINES = {"auto", "piper", "espeak", "tone-fallback"}
-REAL_TTS_ENGINES = {"piper", "espeak"}
+VALID_TTS_ENGINES = {"auto", "piper", "espeak", "openai-compatible", "tone-fallback"}
+REAL_TTS_ENGINES = {"piper", "espeak", "openai-compatible"}
 
 
 def synthesize_segments(text: str, voice: str = "opencommotion-local") -> dict:
@@ -43,7 +49,8 @@ def synthesize_segments(text: str, voice: str = "opencommotion-local") -> dict:
                 "No real TTS engine is configured or available. "
                 f"selected={capabilities['selected_engine']}, "
                 f"piper_ready={capabilities['piper']['ready']}, "
-                f"espeak_ready={capabilities['espeak']['ready']}"
+                f"espeak_ready={capabilities['espeak']['ready']}, "
+                f"openai_ready={capabilities['openai_compatible']['ready']}"
             ),
         )
 
@@ -72,6 +79,11 @@ def tts_capabilities() -> dict:
     espeak_bin = _espeak_binary()
     espeak_ready = espeak_bin is not None
 
+    openai_base_url = os.getenv(VOICE_OPENAI_BASE_URL_ENV, "").strip()
+    openai_model = os.getenv(VOICE_OPENAI_TTS_MODEL_ENV, "").strip()
+    openai_api_key = os.getenv(VOICE_OPENAI_API_KEY_ENV, "").strip()
+    openai_ready = bool(openai_base_url) and bool(openai_model)
+
     return {
         "selected_engine": selected_engine,
         "strict_real_engines": require_real_voice_engines(),
@@ -84,6 +96,12 @@ def tts_capabilities() -> dict:
         "espeak": {
             "binary": espeak_bin,
             "ready": espeak_ready,
+        },
+        "openai_compatible": {
+            "base_url": openai_base_url,
+            "model": openai_model,
+            "api_key_set": bool(openai_api_key),
+            "ready": openai_ready,
         },
     }
 
@@ -104,6 +122,9 @@ def _render_voice_wav(text: str, output_path: Path) -> str:
     if selected_engine == "espeak":
         return _render_with_espeak(text, output_path, required=True)
 
+    if selected_engine == "openai-compatible":
+        return _render_with_openai_compatible(text, output_path, required=True)
+
     if selected_engine == "tone-fallback":
         _write_tone_wav(
             output_path=output_path,
@@ -119,6 +140,10 @@ def _render_voice_wav(text: str, output_path: Path) -> str:
     espeak_engine = _render_with_espeak(text, output_path, required=False)
     if espeak_engine:
         return espeak_engine
+
+    openai_engine = _render_with_openai_compatible(text, output_path, required=False)
+    if openai_engine:
+        return openai_engine
 
     _write_tone_wav(
         output_path=output_path,
@@ -191,6 +216,82 @@ def _render_with_espeak(text: str, output_path: Path, required: bool) -> str | N
         stderr = completed.stderr.strip() if completed.stderr else "unknown error"
         raise VoiceEngineError(engine="espeak", message=f"espeak synthesis failed: {stderr}")
     return None
+
+
+def _openai_timeout_s() -> float:
+    raw = os.getenv(VOICE_OPENAI_TIMEOUT_ENV, "20").strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        return 20.0
+    return min(max(value, 0.5), 120.0)
+
+
+def _openai_headers() -> dict[str, str]:
+    api_key = os.getenv(VOICE_OPENAI_API_KEY_ENV, "").strip()
+    if not api_key:
+        return {"content-type": "application/json"}
+    return {
+        "content-type": "application/json",
+        "authorization": f"Bearer {api_key}",
+    }
+
+
+def _render_with_openai_compatible(text: str, output_path: Path, required: bool) -> str | None:
+    base_url = os.getenv(VOICE_OPENAI_BASE_URL_ENV, "").rstrip("/")
+    model = os.getenv(VOICE_OPENAI_TTS_MODEL_ENV, "").strip()
+    if not base_url or not model:
+        if required:
+            missing = []
+            if not base_url:
+                missing.append(VOICE_OPENAI_BASE_URL_ENV)
+            if not model:
+                missing.append(VOICE_OPENAI_TTS_MODEL_ENV)
+            raise VoiceEngineError(
+                engine="openai-compatible",
+                message=f"Missing required OpenAI-compatible TTS config: {', '.join(missing)}",
+            )
+        return None
+
+    payload = {
+        "model": model,
+        "input": text,
+        "voice": "alloy",
+        "format": "wav",
+    }
+    try:
+        response = httpx.post(
+            f"{base_url}/audio/speech",
+            json=payload,
+            headers=_openai_headers(),
+            timeout=_openai_timeout_s(),
+        )
+        response.raise_for_status()
+        content = response.content
+    except Exception as exc:  # noqa: BLE001
+        if required:
+            raise VoiceEngineError(
+                engine="openai-compatible",
+                message=f"openai-compatible synthesis failed: {exc}",
+            ) from exc
+        return None
+
+    if not content:
+        if required:
+            raise VoiceEngineError(engine="openai-compatible", message="openai-compatible returned empty audio payload")
+        return None
+    output_path.write_bytes(content)
+    try:
+        _wav_duration_ms(output_path)
+    except Exception as exc:  # noqa: BLE001
+        output_path.unlink(missing_ok=True)
+        if required:
+            raise VoiceEngineError(
+                engine="openai-compatible",
+                message=f"openai-compatible did not return valid wav audio: {exc}",
+            ) from exc
+        return None
+    return "openai-compatible"
 
 
 def _piper_binary() -> str | None:

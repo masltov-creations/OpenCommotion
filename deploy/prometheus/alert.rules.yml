@@ -1,0 +1,38 @@
+groups:
+  - name: opencommotion-core
+    rules:
+      - alert: GatewayDown
+        expr: up{job="gateway"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "OpenCommotion gateway is down"
+          description: "Prometheus cannot scrape gateway metrics for over 2 minutes."
+
+      - alert: OrchestratorDown
+        expr: up{job="orchestrator"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "OpenCommotion orchestrator is down"
+          description: "Prometheus cannot scrape orchestrator metrics for over 2 minutes."
+
+      - alert: HighOrchestrateLatencyP95
+        expr: histogram_quantile(0.95, sum(rate(opencommotion_orchestrate_latency_seconds_bucket[5m])) by (le, source)) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High gateway orchestrate latency p95"
+          description: "Gateway p95 orchestrate latency is above 5 seconds for 5 minutes."
+
+      - alert: ProviderErrorsSpiking
+        expr: sum(rate(opencommotion_provider_errors_total[5m])) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Provider errors are spiking"
+          description: "Provider errors exceed 0.2 events/sec for over 5 minutes."

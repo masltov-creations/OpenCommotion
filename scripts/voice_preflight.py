@@ -24,8 +24,16 @@ def main() -> int:
     if not strict:
         return 0
 
-    stt_ready = bool(stt["faster_whisper"]["ready"] or stt["vosk"]["ready"])
-    tts_ready = bool(tts["piper"]["ready"] or tts["espeak"]["ready"])
+    stt_ready = bool(
+        stt["faster_whisper"]["ready"]
+        or stt["vosk"]["ready"]
+        or stt.get("openai_compatible", {}).get("ready")
+    )
+    tts_ready = bool(
+        tts["piper"]["ready"]
+        or tts["espeak"]["ready"]
+        or tts.get("openai_compatible", {}).get("ready")
+    )
     if stt_ready and tts_ready:
         return 0
 

@@ -9,6 +9,8 @@ from functools import lru_cache
 from pathlib import Path
 from re import findall
 
+import httpx
+
 from services.agents.voice.common import normalized_env, require_real_voice_engines
 from services.agents.voice.errors import VoiceEngineError
 
@@ -16,9 +18,13 @@ STT_ENGINE_ENV = "OPENCOMMOTION_STT_ENGINE"
 STT_MODEL_ENV = "OPENCOMMOTION_STT_MODEL"
 STT_COMPUTE_TYPE_ENV = "OPENCOMMOTION_STT_COMPUTE_TYPE"
 VOSK_MODEL_PATH_ENV = "OPENCOMMOTION_VOSK_MODEL_PATH"
+VOICE_OPENAI_BASE_URL_ENV = "OPENCOMMOTION_VOICE_OPENAI_BASE_URL"
+VOICE_OPENAI_API_KEY_ENV = "OPENCOMMOTION_VOICE_OPENAI_API_KEY"
+VOICE_OPENAI_STT_MODEL_ENV = "OPENCOMMOTION_VOICE_STT_MODEL"
+VOICE_OPENAI_TIMEOUT_ENV = "OPENCOMMOTION_VOICE_OPENAI_TIMEOUT_S"
 
-VALID_STT_ENGINES = {"auto", "hint", "faster-whisper", "vosk", "text-fallback"}
-REAL_STT_ENGINES = {"faster-whisper", "vosk"}
+VALID_STT_ENGINES = {"auto", "hint", "faster-whisper", "vosk", "openai-compatible", "text-fallback"}
+REAL_STT_ENGINES = {"faster-whisper", "vosk", "openai-compatible"}
 
 
 def transcribe_audio(audio: bytes, hint: str = "") -> dict:
@@ -50,6 +56,15 @@ def transcribe_audio(audio: bytes, hint: str = "") -> dict:
             "engine": "vosk",
         }
 
+    if selected_engine == "openai-compatible":
+        result = _transcribe_with_openai_compatible(audio, required=True)
+        return {
+            "partial": "",
+            "final": result[0],
+            "confidence": result[1],
+            "engine": "openai-compatible",
+        }
+
     if selected_engine == "text-fallback":
         return _fallback_transcript(audio)
 
@@ -71,6 +86,15 @@ def transcribe_audio(audio: bytes, hint: str = "") -> dict:
             "engine": "vosk",
         }
 
+    auto_openai = _transcribe_with_openai_compatible(audio, required=False)
+    if auto_openai:
+        return {
+            "partial": "",
+            "final": auto_openai[0],
+            "confidence": auto_openai[1],
+            "engine": "openai-compatible",
+        }
+
     if require_real_voice_engines():
         capabilities = stt_capabilities()
         raise VoiceEngineError(
@@ -79,7 +103,8 @@ def transcribe_audio(audio: bytes, hint: str = "") -> dict:
                 "No real STT engine is configured or available. "
                 f"selected={capabilities['selected_engine']}, "
                 f"faster_whisper_ready={capabilities['faster_whisper']['ready']}, "
-                f"vosk_ready={capabilities['vosk']['ready']}"
+                f"vosk_ready={capabilities['vosk']['ready']}, "
+                f"openai_ready={capabilities['openai_compatible']['ready']}"
             ),
         )
 
@@ -96,6 +121,11 @@ def stt_capabilities() -> dict:
     vosk_importable = _module_importable("vosk")
     vosk_ready = bool(vosk_model_path) and Path(vosk_model_path).is_dir() and vosk_importable
 
+    openai_base_url = os.getenv(VOICE_OPENAI_BASE_URL_ENV, "").strip()
+    openai_model = os.getenv(VOICE_OPENAI_STT_MODEL_ENV, "").strip()
+    openai_api_key = os.getenv(VOICE_OPENAI_API_KEY_ENV, "").strip()
+    openai_ready = bool(openai_base_url) and bool(openai_model)
+
     return {
         "selected_engine": selected_engine,
         "strict_real_engines": require_real_voice_engines(),
@@ -109,6 +139,12 @@ def stt_capabilities() -> dict:
             "importable": vosk_importable,
             "model_path": vosk_model_path,
             "ready": vosk_ready,
+        },
+        "openai_compatible": {
+            "base_url": openai_base_url,
+            "model": openai_model,
+            "api_key_set": bool(openai_api_key),
+            "ready": openai_ready,
         },
     }
 
@@ -135,6 +171,65 @@ def _fallback_transcript(audio: bytes) -> dict:
         "confidence": 0.4,
         "engine": "fallback",
     }
+
+
+def _openai_timeout_s() -> float:
+    raw = os.getenv(VOICE_OPENAI_TIMEOUT_ENV, "20").strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        return 20.0
+    return min(max(value, 0.5), 120.0)
+
+
+def _openai_headers() -> dict[str, str]:
+    api_key = os.getenv(VOICE_OPENAI_API_KEY_ENV, "").strip()
+    if not api_key:
+        return {}
+    return {"authorization": f"Bearer {api_key}"}
+
+
+def _transcribe_with_openai_compatible(audio: bytes, required: bool) -> tuple[str, float] | None:
+    base_url = os.getenv(VOICE_OPENAI_BASE_URL_ENV, "").rstrip("/")
+    model = os.getenv(VOICE_OPENAI_STT_MODEL_ENV, "").strip()
+    if not base_url or not model:
+        if required:
+            missing = []
+            if not base_url:
+                missing.append(VOICE_OPENAI_BASE_URL_ENV)
+            if not model:
+                missing.append(VOICE_OPENAI_STT_MODEL_ENV)
+            raise VoiceEngineError(
+                engine="openai-compatible",
+                message=f"Missing required OpenAI-compatible STT config: {', '.join(missing)}",
+            )
+        return None
+
+    files = {"file": ("audio.wav", audio, "audio/wav")}
+    data = {"model": model}
+    headers = _openai_headers()
+    try:
+        response = httpx.post(
+            f"{base_url}/audio/transcriptions",
+            data=data,
+            files=files,
+            headers=headers,
+            timeout=_openai_timeout_s(),
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except Exception as exc:  # noqa: BLE001
+        if required:
+            raise VoiceEngineError(
+                engine="openai-compatible",
+                message=f"openai-compatible transcription failed: {exc}",
+            ) from exc
+        return None
+
+    text = str(payload.get("text", "")).strip()
+    if not text:
+        return None
+    return text, 0.88
 
 
 def _transcribe_with_faster_whisper(audio: bytes, required: bool) -> tuple[str, float] | None:

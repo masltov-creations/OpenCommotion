@@ -30,6 +30,13 @@ fi
 
 mkdir -p runtime/logs runtime/agent-runs data/artifacts/bundles data/audio
 
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
 if [ ! -x .venv/bin/python ]; then
   python3 -m venv .venv
 fi

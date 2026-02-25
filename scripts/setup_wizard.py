@@ -82,6 +82,9 @@ def build_configuration(existing: dict[str, str]) -> tuple[dict[str, str], list[
         [
             ("ollama", "Ollama local models (recommended open-source default)"),
             ("openai-compatible", "OpenAI-compatible server (llama.cpp/vLLM/LocalAI)"),
+            ("codex-cli", "Codex CLI local worker"),
+            ("openclaw-cli", "OpenClaw CLI local worker"),
+            ("openclaw-openai", "OpenClaw OpenAI-compatible endpoint"),
             ("heuristic", "Built-in offline heuristic fallback only"),
         ],
         default=0,
@@ -117,6 +120,45 @@ def build_configuration(existing: dict[str, str]) -> tuple[dict[str, str], list[
             "API key (leave blank for local servers that do not require auth)",
             config.get("OPENCOMMOTION_OPENAI_API_KEY", ""),
         )
+    elif llm_choice == "codex-cli":
+        config["OPENCOMMOTION_CODEX_BIN"] = ask(
+            "Codex binary name/path",
+            config.get("OPENCOMMOTION_CODEX_BIN", "codex"),
+        )
+        config["OPENCOMMOTION_CODEX_MODEL"] = ask(
+            "Codex model (optional)",
+            config.get("OPENCOMMOTION_CODEX_MODEL", ""),
+        )
+        config["OPENCOMMOTION_CODEX_TIMEOUT_S"] = ask(
+            "Codex timeout seconds",
+            config.get("OPENCOMMOTION_CODEX_TIMEOUT_S", "60"),
+        )
+    elif llm_choice == "openclaw-cli":
+        config["OPENCOMMOTION_OPENCLAW_BIN"] = ask(
+            "OpenClaw binary name/path",
+            config.get("OPENCOMMOTION_OPENCLAW_BIN", "openclaw"),
+        )
+        config["OPENCOMMOTION_OPENCLAW_TIMEOUT_S"] = ask(
+            "OpenClaw timeout seconds",
+            config.get("OPENCOMMOTION_OPENCLAW_TIMEOUT_S", "90"),
+        )
+        config["OPENCOMMOTION_OPENCLAW_SESSION_PREFIX"] = ask(
+            "OpenClaw session prefix",
+            config.get("OPENCOMMOTION_OPENCLAW_SESSION_PREFIX", "opencommotion"),
+        )
+    elif llm_choice == "openclaw-openai":
+        config["OPENCOMMOTION_OPENCLAW_OPENAI_MODEL"] = ask(
+            "OpenClaw OpenAI-compatible model id",
+            config.get("OPENCOMMOTION_OPENCLAW_OPENAI_MODEL", "Qwen/Qwen2.5-7B-Instruct"),
+        )
+        config["OPENCOMMOTION_OPENCLAW_OPENAI_BASE_URL"] = ask(
+            "OpenClaw OpenAI-compatible base URL",
+            config.get("OPENCOMMOTION_OPENCLAW_OPENAI_BASE_URL", "http://127.0.0.1:8002/v1"),
+        )
+        config["OPENCOMMOTION_OPENCLAW_OPENAI_API_KEY"] = ask(
+            "OpenClaw OpenAI-compatible API key",
+            config.get("OPENCOMMOTION_OPENCLAW_OPENAI_API_KEY", ""),
+        )
     else:
         config["OPENCOMMOTION_LLM_MODEL"] = ""
 
@@ -125,10 +167,11 @@ def build_configuration(existing: dict[str, str]) -> tuple[dict[str, str], list[
         [
             ("faster-whisper", "faster-whisper (recommended quality)"),
             ("vosk", "Vosk (lightweight offline)"),
+            ("openai-compatible", "OpenAI-compatible cloud STT"),
             ("auto", "Auto (try faster-whisper, then vosk, then fallback)"),
             ("text-fallback", "Text fallback only (dev/testing)"),
         ],
-        default=2,
+        default=3,
     )
     config["OPENCOMMOTION_STT_ENGINE"] = stt_choice
     if stt_choice == "faster-whisper":
@@ -147,16 +190,22 @@ def build_configuration(existing: dict[str, str]) -> tuple[dict[str, str], list[
             config.get("OPENCOMMOTION_VOSK_MODEL_PATH", "/opt/models/vosk-model-small-en-us-0.15"),
         )
         tips.append("pip install vosk")
+    elif stt_choice == "openai-compatible":
+        config["OPENCOMMOTION_VOICE_STT_MODEL"] = ask(
+            "OpenAI-compatible STT model",
+            config.get("OPENCOMMOTION_VOICE_STT_MODEL", "gpt-4o-mini-transcribe"),
+        )
 
     tts_choice = choose(
         "Choose TTS engine",
         [
             ("piper", "Piper (recommended quality)"),
             ("espeak", "espeak/espeak-ng (quick local default)"),
+            ("openai-compatible", "OpenAI-compatible cloud TTS"),
             ("auto", "Auto (try piper, then espeak, then tone fallback)"),
             ("tone-fallback", "Tone fallback only (dev/testing)"),
         ],
-        default=2,
+        default=3,
     )
     config["OPENCOMMOTION_TTS_ENGINE"] = tts_choice
     if tts_choice == "piper":
@@ -178,9 +227,48 @@ def build_configuration(existing: dict[str, str]) -> tuple[dict[str, str], list[
             "espeak rate",
             config.get("OPENCOMMOTION_ESPEAK_RATE", "170"),
         )
+    elif tts_choice == "openai-compatible":
+        config["OPENCOMMOTION_VOICE_TTS_MODEL"] = ask(
+            "OpenAI-compatible TTS model",
+            config.get("OPENCOMMOTION_VOICE_TTS_MODEL", "gpt-4o-mini-tts"),
+        )
+
+    if stt_choice == "openai-compatible" or tts_choice == "openai-compatible":
+        config["OPENCOMMOTION_VOICE_OPENAI_BASE_URL"] = ask(
+            "OpenAI-compatible voice base URL",
+            config.get("OPENCOMMOTION_VOICE_OPENAI_BASE_URL", "https://api.openai.com/v1"),
+        )
+        config["OPENCOMMOTION_VOICE_OPENAI_API_KEY"] = ask(
+            "OpenAI-compatible voice API key",
+            config.get("OPENCOMMOTION_VOICE_OPENAI_API_KEY", ""),
+        )
+        config["OPENCOMMOTION_VOICE_OPENAI_TIMEOUT_S"] = ask(
+            "OpenAI-compatible voice timeout seconds",
+            config.get("OPENCOMMOTION_VOICE_OPENAI_TIMEOUT_S", "20"),
+        )
 
     strict_real = yes_no("Require real STT/TTS engines in runtime (recommended for production)?", default_yes=False)
     config["OPENCOMMOTION_VOICE_REQUIRE_REAL_ENGINES"] = "true" if strict_real else "false"
+
+    auth_mode = choose(
+        "Choose gateway auth mode",
+        [
+            ("api-key", "API key mode (recommended)"),
+            ("network-trust", "Allowlist network trust mode"),
+        ],
+        default=0,
+    )
+    config["OPENCOMMOTION_AUTH_MODE"] = auth_mode
+    if auth_mode == "api-key":
+        config["OPENCOMMOTION_API_KEYS"] = ask(
+            "Gateway API keys (comma-separated)",
+            config.get("OPENCOMMOTION_API_KEYS", "dev-opencommotion-key"),
+        )
+    else:
+        config["OPENCOMMOTION_ALLOWED_IPS"] = ask(
+            "Allowed IP/CIDR list (comma-separated)",
+            config.get("OPENCOMMOTION_ALLOWED_IPS", "127.0.0.1/32,::1/128"),
+        )
 
     return config, tips
 
@@ -200,9 +288,9 @@ def main() -> int:
     print("\nNext steps:")
     for tip in tips:
         print(f"- {tip}")
-    print("- make voice-preflight")
-    print("- make dev")
-    print("- open http://127.0.0.1:5173")
+    print("- python3 scripts/opencommotion.py preflight")
+    print("- python3 scripts/opencommotion.py run")
+    print("- open http://127.0.0.1:8000")
     return 0
 
 

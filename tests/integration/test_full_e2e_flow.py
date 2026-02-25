@@ -10,6 +10,8 @@ from services.orchestrator.app.main import app as orchestrator_app
 
 
 def test_full_e2e_turn_artifact_recall_and_ws_event(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENCOMMOTION_AUTH_MODE", "api-key")
+    monkeypatch.delenv("OPENCOMMOTION_API_KEYS", raising=False)
     db_path = tmp_path / "artifacts.db"
     bundle_root = tmp_path / "bundles"
     monkeypatch.setattr(

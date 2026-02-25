@@ -7,7 +7,14 @@ from services.gateway.app import main as gateway_main
 from services.orchestrator.app.main import app as orchestrator_app
 
 
+def _write_executable(path, content: str) -> None:
+    path.write_text(content, encoding="utf-8")
+    path.chmod(0o755)
+
+
 def _client_with_inprocess_orchestrator(tmp_path, monkeypatch) -> TestClient:
+    monkeypatch.setenv("OPENCOMMOTION_AUTH_MODE", "api-key")
+    monkeypatch.delenv("OPENCOMMOTION_API_KEYS", raising=False)
     db_path = tmp_path / "artifacts.db"
     bundle_root = tmp_path / "bundles"
     monkeypatch.setattr(
@@ -48,6 +55,10 @@ def test_runtime_capabilities_expose_llm_and_voice(tmp_path, monkeypatch) -> Non
     assert "selected_provider" in payload["llm"]
     assert "stt" in payload["voice"]
     assert "tts" in payload["voice"]
+    assert "providers" in payload["llm"]
+    assert "codex-cli" in payload["llm"]["providers"]
+    assert "openclaw-cli" in payload["llm"]["providers"]
+    assert "openclaw-openai" in payload["llm"]["providers"]
 
 
 def test_orchestrate_fails_without_llm_fallback_when_provider_unavailable(tmp_path, monkeypatch) -> None:
@@ -65,3 +76,44 @@ def test_orchestrate_fails_without_llm_fallback_when_provider_unavailable(tmp_pa
     assert res.status_code == 503
     detail = res.json()["detail"]
     assert detail["error"] == "llm_engine_unavailable"
+
+
+def test_orchestrate_works_with_codex_cli_provider(tmp_path, monkeypatch) -> None:
+    fake_codex = tmp_path / "fake-codex"
+    _write_executable(
+        fake_codex,
+        """#!/usr/bin/env bash
+echo '{"type":"item.completed","item":{"type":"agent_message","text":"codex e2e reply"}}'
+""",
+    )
+    monkeypatch.setenv("OPENCOMMOTION_LLM_PROVIDER", "codex-cli")
+    monkeypatch.setenv("OPENCOMMOTION_LLM_ALLOW_FALLBACK", "false")
+    monkeypatch.setenv("OPENCOMMOTION_CODEX_BIN", str(fake_codex))
+
+    c = _client_with_inprocess_orchestrator(tmp_path, monkeypatch)
+    res = c.post("/v1/orchestrate", json={"session_id": "codex-e2e", "prompt": "moonwalk adoption chart"})
+    assert res.status_code == 200
+    payload = res.json()
+    assert "codex e2e reply" in payload["text"]
+    assert payload["session_id"] == "codex-e2e"
+
+
+def test_orchestrate_works_with_openclaw_cli_provider(tmp_path, monkeypatch) -> None:
+    fake_openclaw = tmp_path / "fake-openclaw"
+    _write_executable(
+        fake_openclaw,
+        """#!/usr/bin/env bash
+echo '{"payloads":[{"text":"openclaw e2e reply"}]}'
+""",
+    )
+    monkeypatch.setenv("OPENCOMMOTION_LLM_PROVIDER", "openclaw-cli")
+    monkeypatch.setenv("OPENCOMMOTION_LLM_ALLOW_FALLBACK", "false")
+    monkeypatch.setenv("OPENCOMMOTION_OPENCLAW_BIN", str(fake_openclaw))
+    monkeypatch.setenv("OPENCOMMOTION_OPENCLAW_SESSION_PREFIX", "test-openclaw")
+
+    c = _client_with_inprocess_orchestrator(tmp_path, monkeypatch)
+    res = c.post("/v1/orchestrate", json={"session_id": "openclaw-e2e", "prompt": "ufo landing with pie chart"})
+    assert res.status_code == 200
+    payload = res.json()
+    assert "openclaw e2e reply" in payload["text"]
+    assert payload["session_id"] == "openclaw-e2e"

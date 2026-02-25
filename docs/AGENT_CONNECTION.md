@@ -24,7 +24,7 @@ python3 scripts/opencommotion.py down
 Notes:
 - Keep all Python calls on the project environment: `source .venv/bin/activate` or use `.venv/bin/python`.
 - If `opencommotion.py run` is running in one terminal, run client commands from a second terminal.
-- For a full fresh-consumer proof in one command, run `make fresh-agent-e2e`.
+- For a full fresh-consumer proof in one command, run `python3 scripts/opencommotion.py fresh-agent-e2e`.
 
 ## 1) Start the stack
 
@@ -43,6 +43,19 @@ Default endpoints:
 
 Contributor note:
 - For hot-reload UI development, run `python3 scripts/opencommotion.py dev` and use `http://127.0.0.1:5173`.
+
+## 1.1) API key and websocket auth
+
+Default auth mode is API key.
+
+- HTTP header: `x-api-key: dev-opencommotion-key`
+- WebSocket query param: `?api_key=dev-opencommotion-key`
+
+Use this in curl examples:
+
+```bash
+export OPENCOMMOTION_API_KEY=dev-opencommotion-key
+```
 
 ## 2) Health checks
 
@@ -64,6 +77,7 @@ Example:
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8000/v1/orchestrate \
+  -H "x-api-key: ${OPENCOMMOTION_API_KEY}" \
   -H 'content-type: application/json' \
   -d '{"session_id":"agent-session-1","prompt":"moonwalk adoption chart with voice"}'
 ```
@@ -74,6 +88,7 @@ curl -sS -X POST http://127.0.0.1:8000/v1/orchestrate \
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8000/v1/voice/transcribe \
+  -H "x-api-key: ${OPENCOMMOTION_API_KEY}" \
   -F "audio=@sample.wav"
 ```
 
@@ -81,6 +96,7 @@ curl -sS -X POST http://127.0.0.1:8000/v1/voice/transcribe \
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8000/v1/voice/synthesize \
+  -H "x-api-key: ${OPENCOMMOTION_API_KEY}" \
   -H 'content-type: application/json' \
   -d '{"text":"hello opencommotion"}'
 ```
@@ -102,7 +118,7 @@ curl -sS http://127.0.0.1:8000/v1/runtime/capabilities
 Production note:
 - Set `OPENCOMMOTION_VOICE_REQUIRE_REAL_ENGINES=true` to enforce real STT/TTS engines.
 - In strict mode, voice endpoints and turn orchestration return `503` when only fallback engines are available.
-- Run `make voice-preflight` before starting production agents.
+- Run `python3 scripts/opencommotion.py preflight` before starting production agents.
 
 ## 5) Artifact memory connection points
 
@@ -110,6 +126,7 @@ Production note:
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8000/v1/artifacts/save \
+  -H "x-api-key: ${OPENCOMMOTION_API_KEY}" \
   -H 'content-type: application/json' \
   -d '{"title":"My Turn","summary":"adoption story","tags":["moonwalk","chart"],"saved_by":"agent"}'
 ```
@@ -120,7 +137,7 @@ curl -sS -X POST http://127.0.0.1:8000/v1/artifacts/save \
   - `mode=hybrid`
 
 ```bash
-curl -sS "http://127.0.0.1:8000/v1/artifacts/search?q=uptake&mode=semantic"
+curl -sS -H "x-api-key: ${OPENCOMMOTION_API_KEY}" "http://127.0.0.1:8000/v1/artifacts/search?q=uptake&mode=semantic"
 ```
 
 ## 6) Draw and animate interfaces
@@ -148,6 +165,7 @@ Direct compile example:
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8000/v1/brush/compile \
+  -H "x-api-key: ${OPENCOMMOTION_API_KEY}" \
   -H 'content-type: application/json' \
   -d '{
     "strokes": [
@@ -179,14 +197,32 @@ Orchestrated animate example:
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8000/v1/orchestrate \
+  -H "x-api-key: ${OPENCOMMOTION_API_KEY}" \
   -H 'content-type: application/json' \
   -d '{"session_id":"anim-agent-1","prompt":"show a moonwalk, orbiting globe, and adoption chart"}'
 ```
 
 For realtime playback:
-1. Subscribe to websocket `ws://127.0.0.1:8000/v1/events/ws`.
+1. Subscribe to websocket `ws://127.0.0.1:8000/v1/events/ws?api_key=${OPENCOMMOTION_API_KEY}`.
 2. Read `payload.visual_patches` in event order.
 3. Apply patches by `at_ms` against local scene state.
+
+## 6.1) Setup and run-manager APIs
+
+- `GET /v1/setup/state`
+- `POST /v1/setup/validate`
+- `POST /v1/setup/state`
+- `POST /v1/agent-runs`
+- `GET /v1/agent-runs`
+- `GET /v1/agent-runs/{run_id}`
+- `POST /v1/agent-runs/{run_id}/enqueue`
+- `POST /v1/agent-runs/{run_id}/control`
+
+Run-manager event types on websocket:
+- `agent.run.state`
+- `agent.turn.started`
+- `agent.turn.completed`
+- `agent.turn.failed`
 
 ## 7) Local expert-agent coordination files
 
@@ -242,10 +278,27 @@ python scripts/agent_examples/robust_turn_client.py \
 4. Stop stack:
 
 ```bash
-make down
+python3 scripts/opencommotion.py down
 ```
 
-## 10) Example: Other agent runtimes
+## 10) Example: OpenClaw and other runtimes
+
+OpenClaw examples:
+
+```bash
+. .venv/bin/activate
+python scripts/agent_examples/openclaw_cli_turn_client.py
+python scripts/agent_examples/openclaw_openai_turn_client.py --base-url http://127.0.0.1:8002/v1
+```
+
+Codex provider example:
+
+```bash
+. .venv/bin/activate
+python scripts/agent_examples/codex_cli_turn_client.py
+```
+
+## 11) Example: Other agent runtimes
 
 Any agent runtime (Claude, custom LangGraph/AutoGen workers, local scripts) can use the same APIs:
 
@@ -253,35 +306,36 @@ Any agent runtime (Claude, custom LangGraph/AutoGen workers, local scripts) can 
 
 ```bash
 . .venv/bin/activate
-python scripts/agent_examples/robust_turn_client.py --session other-agent-1 --prompt "ufo landing with pie chart"
+python scripts/agent_examples/robust_turn_client.py --session other-agent-1 --prompt "ufo landing with pie chart" --api-key "${OPENCOMMOTION_API_KEY}"
 ```
 
 - Option A2: use the minimal baseline script:
 
 ```bash
 . .venv/bin/activate
-python scripts/agent_examples/rest_ws_agent_client.py --session other-agent-2 --prompt "globe orbit with insight"
+python scripts/agent_examples/rest_ws_agent_client.py --session other-agent-2 --prompt "globe orbit with insight" --api-key "${OPENCOMMOTION_API_KEY}"
 ```
 
 - Option B: curl + websocket client pattern:
-  - open websocket: `ws://127.0.0.1:8000/v1/events/ws`
+  - open websocket: `ws://127.0.0.1:8000/v1/events/ws?api_key=${OPENCOMMOTION_API_KEY}`
   - post orchestrate via REST:
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8000/v1/orchestrate \
+  -H "x-api-key: ${OPENCOMMOTION_API_KEY}" \
   -H 'content-type: application/json' \
   -d '{"session_id":"other-agent-3","prompt":"globe orbit with insight"}'
 ```
 
   - process websocket event where `session_id` and `turn_id` match the REST response.
 
-## 11) Stop stack
+## 12) Stop stack
 
 ```bash
-make down
+python3 scripts/opencommotion.py down
 ```
 
-## 12) Multi-agent operating context (required before execution)
+## 13) Multi-agent operating context (required before execution)
 
 Before parallel execution, the `lead-orchestrator` should publish one shared context packet for the whole wave. Every agent works from this same packet.
 
@@ -322,10 +376,10 @@ Context packet template:
     "No merge without test evidence"
   ],
   "quality_gates": [
-    "make test-all",
-    "make test-e2e",
-    "make security-checks",
-    "make perf-checks",
+    "python3 scripts/opencommotion.py test",
+    "python3 scripts/opencommotion.py test-e2e",
+    "python3 scripts/opencommotion.py test-complete",
+    "python3 scripts/opencommotion.py preflight",
     "npm run ui:build"
   ],
   "handoff_required": [
@@ -348,7 +402,7 @@ python3 scripts/init_wave_context.py --run-id main-wave-01
 2. Fill all fields before work starts.
 3. Update only `lead-orchestrator` after each checkpoint.
 
-## 13) Efficient orchestration protocol (hub-and-spoke)
+## 14) Efficient orchestration protocol (hub-and-spoke)
 
 Use this sequence for every implementation wave:
 1. `lead-orchestrator` decomposes work by interface boundary, not by component preference.
@@ -375,7 +429,7 @@ Efficiency rules:
 - Prefer additive schema changes and compatibility shims over breaking rewrites.
 - Escalate blockers quickly with dependency + unblock request, not just error text.
 
-## 14) Role operating model (best ability per agent)
+## 15) Role operating model (best ability per agent)
 
 - `lead-orchestrator`: own decomposition, dependency ordering, merge decisions, and risk tracking.
 - `platform-protocol`: own schema definitions, versioning policy, and compatibility validation.
@@ -391,7 +445,7 @@ Efficiency rules:
 - `qa-security-perf`: own E2E confidence, security checks, and performance thresholds.
 - `docs-oss`: own user/agent docs accuracy against actual runtime behavior.
 
-## 15) Coordination artifacts and cadence
+## 16) Coordination artifacts and cadence
 
 Use these files as coordination system-of-record:
 - Agent role definitions: `agents/*.json`
@@ -409,7 +463,7 @@ Recommended cadence:
 Handoff report template:
 - `agents/scaffolds/templates/handoff-report.example.md`
 
-## 16) Troubleshooting for first-time agents
+## 17) Troubleshooting for first-time agents
 
 - Health endpoint fails after `opencommotion.py run`:
   - check `runtime/logs/gateway.log`
@@ -417,7 +471,7 @@ Handoff report template:
   - rerun `python3 scripts/opencommotion.py down && python3 scripts/opencommotion.py run`
 - Browser E2E fails with missing system libs (example: `libnspr4.so`):
   - run `bash scripts/ensure_playwright_libs.sh`
-  - rerun `make test-e2e`
+  - rerun `python3 scripts/opencommotion.py test-e2e`
 - Python module error (example: `No module named httpx`):
   - run `. .venv/bin/activate`
   - rerun command with `.venv/bin/python ...`

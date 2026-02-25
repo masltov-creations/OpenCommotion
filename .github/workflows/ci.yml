@@ -59,8 +59,8 @@ jobs:
       - name: Run browser E2E
         run: |
           set -euo pipefail
-          make dev
-          trap "make down" EXIT
+          python3 scripts/opencommotion.py dev
+          trap "python3 scripts/opencommotion.py down" EXIT
           for i in $(seq 1 45); do
             curl -fsS http://127.0.0.1:8000/health >/dev/null && curl -fsS http://127.0.0.1:8001/health >/dev/null && break
             sleep 1

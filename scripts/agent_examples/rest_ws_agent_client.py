@@ -4,7 +4,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 from dataclasses import dataclass
+from urllib.parse import urlencode
 
 import httpx
 import websockets
@@ -23,17 +25,21 @@ async def run_agent_flow(
     gateway: str,
     session_id: str,
     prompt: str,
+    api_key: str,
     save: bool,
     search_query: str,
     timeout_s: float,
 ) -> TurnResult:
     gateway = gateway.rstrip("/")
     ws_url = gateway.replace("http://", "ws://").replace("https://", "wss://") + "/v1/events/ws"
+    if api_key:
+        ws_url = f"{ws_url}?{urlencode({'api_key': api_key})}"
 
     async with websockets.connect(ws_url) as ws:
         await ws.send("ping")
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        headers = {"x-api-key": api_key} if api_key else {}
+        async with httpx.AsyncClient(timeout=30, headers=headers) as client:
             response = await client.post(
                 f"{gateway}/v1/orchestrate",
                 json={"session_id": session_id, "prompt": prompt},
@@ -111,6 +117,11 @@ async def _wait_for_turn_event(
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="OpenCommotion REST + WS agent example client")
     parser.add_argument("--gateway", default="http://127.0.0.1:8000", help="Gateway base URL")
+    parser.add_argument(
+        "--api-key",
+        default=os.getenv("OPENCOMMOTION_GATEWAY_API_KEY", os.getenv("OPENCOMMOTION_API_KEY", "dev-opencommotion-key")),
+        help="Gateway API key",
+    )
     parser.add_argument("--session", default="agent-session-demo", help="Session ID")
     parser.add_argument("--prompt", default="moonwalk adoption chart with voice", help="Prompt to orchestrate")
     parser.add_argument("--search", default="moonwalk", help="Search query after save")
@@ -126,6 +137,7 @@ def main() -> None:
             gateway=args.gateway,
             session_id=args.session,
             prompt=args.prompt,
+            api_key=args.api_key,
             save=not args.no_save,
             search_query=args.search,
             timeout_s=args.timeout,
