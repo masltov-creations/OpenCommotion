@@ -25,16 +25,18 @@ One-line bootstrap (clone/update + setup):
 Linux/macOS/Git Bash:
 
 ```bash
-mkdir -p /home/$USER/apps && ( [ -d /home/$USER/apps/opencommotion/.git ] && git -C /home/$USER/apps/opencommotion pull --ff-only origin main || git clone https://github.com/masltov-creations/opencommotion /home/$USER/apps/opencommotion ) && cd /home/$USER/apps/opencommotion && ./scripts/setup.sh
+mkdir -p /home/$USER/apps && ( [ -d /home/$USER/apps/opencommotion/.git ] && git -C /home/$USER/apps/opencommotion pull --ff-only origin main || git clone https://github.com/masltov-creations/opencommotion /home/$USER/apps/opencommotion ) && cd /home/$USER/apps/opencommotion && bash scripts/setup.sh
 ```
 
 PowerShell (via WSL):
 
 ```powershell
-wsl bash -lc 'mkdir -p ~/apps && ( [ -d ~/apps/opencommotion/.git ] && git -C ~/apps/opencommotion pull --ff-only origin main || git clone https://github.com/masltov-creations/opencommotion ~/apps/opencommotion ) && cd ~/apps/opencommotion && ./scripts/setup.sh'
+wsl bash -lc 'mkdir -p ~/apps && ( [ -d ~/apps/opencommotion/.git ] && git -C ~/apps/opencommotion pull --ff-only origin main || git clone https://github.com/masltov-creations/opencommotion ~/apps/opencommotion ) && cd ~/apps/opencommotion && bash scripts/setup.sh'
 ```
 
-That command installs dependencies, runs the setup wizard, and starts the app.
+That command installs dependencies, runs the setup wizard, starts the app, then offers to open your browser (default: yes).
+Run it from an interactive terminal so the wizard and browser prompt can appear.
+To avoid `Permission denied`, run setup via `bash scripts/setup.sh` (as shown above), not `./scripts/setup.sh`.
 
 Manual start (if needed):
 
@@ -49,6 +51,21 @@ Stop the app:
 
 ```bash
 python3 scripts/opencommotion.py down
+```
+
+If startup fails due to a port conflict, the script now exits with a clear error.
+Common recovery path:
+
+```bash
+python3 scripts/opencommotion.py down
+python3 scripts/opencommotion.py run
+```
+
+If you ever see `bash: ./scripts/setup.sh: Permission denied`:
+
+```bash
+cd ~/apps/opencommotion
+bash scripts/setup.sh
 ```
 
 ## First 2 Minutes In The App
@@ -117,13 +134,13 @@ python3 scripts/agent_examples/rest_ws_agent_client.py \
 Linux/macOS/Git Bash:
 
 ```bash
-mkdir -p /home/$USER/apps && ( [ -d /home/$USER/apps/opencommotion/.git ] && git -C /home/$USER/apps/opencommotion pull --ff-only origin main || git clone https://github.com/masltov-creations/opencommotion /home/$USER/apps/opencommotion ) && cd /home/$USER/apps/opencommotion && ./scripts/setup.sh
+mkdir -p /home/$USER/apps && ( [ -d /home/$USER/apps/opencommotion/.git ] && git -C /home/$USER/apps/opencommotion pull --ff-only origin main || git clone https://github.com/masltov-creations/opencommotion /home/$USER/apps/opencommotion ) && cd /home/$USER/apps/opencommotion && bash scripts/setup.sh
 ```
 
 PowerShell (via WSL):
 
 ```powershell
-wsl bash -lc 'mkdir -p ~/apps && ( [ -d ~/apps/opencommotion/.git ] && git -C ~/apps/opencommotion pull --ff-only origin main || git clone https://github.com/masltov-creations/opencommotion ~/apps/opencommotion ) && cd ~/apps/opencommotion && ./scripts/setup.sh'
+wsl bash -lc 'mkdir -p ~/apps && ( [ -d ~/apps/opencommotion/.git ] && git -C ~/apps/opencommotion pull --ff-only origin main || git clone https://github.com/masltov-creations/opencommotion ~/apps/opencommotion ) && cd ~/apps/opencommotion && bash scripts/setup.sh'
 ```
 
 2. Authenticate Codex CLI once:
@@ -192,7 +209,8 @@ python3 scripts/opencommotion.py down
 ```
 
 Headless/CI note:
-- Use `./scripts/setup.sh --no-run` if you want setup without starting services.
+- Use `bash scripts/setup.sh --no-run` if you want setup without starting services.
+- Use `bash scripts/setup.sh --no-open` if you want startup without browser prompt.
 
 ## Defaults You Should Know
 
