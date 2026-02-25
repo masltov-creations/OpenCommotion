@@ -176,7 +176,7 @@ export default function App() {
       const data = (await res.json()) as RuntimeCapabilities
       setRuntimeCaps(data)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown capability failure'
+      const msg = formatClientError(err, 'runtime capabilities', 'Unknown capability failure')
       setCapsError(msg)
     } finally {
       setCapsLoading(false)
@@ -196,7 +196,7 @@ export default function App() {
       const data = (await res.json()) as SetupStateResponse
       setSetupDraft(data.state || {})
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown setup state failure'
+      const msg = formatClientError(err, 'setup state', 'Unknown setup state failure')
       setLastError(msg)
     } finally {
       setSetupLoading(false)
@@ -227,7 +227,7 @@ export default function App() {
         setSetupMessage('Setup validation passed.')
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown setup validate failure'
+      const msg = formatClientError(err, 'setup validate', 'Unknown setup validate failure')
       setLastError(msg)
     }
   }
@@ -259,7 +259,7 @@ export default function App() {
       await refreshRuntimeCapabilities()
       await refreshRuns()
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown setup save failure'
+      const msg = formatClientError(err, 'setup save', 'Unknown setup save failure')
       setLastError(msg)
     } finally {
       setSetupSaving(false)
@@ -282,7 +282,7 @@ export default function App() {
         setSelectedRunId(rows[0].run_id)
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown list-runs failure'
+      const msg = formatClientError(err, 'list runs', 'Unknown list-runs failure')
       setLastError(msg)
     }
   }, [authHeaders, selectedRunId])
@@ -304,7 +304,7 @@ export default function App() {
       }
       await refreshRuns()
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown create-run failure'
+      const msg = formatClientError(err, 'create run', 'Unknown create-run failure')
       setLastError(msg)
     } finally {
       setRunActionLoading(false)
@@ -327,7 +327,7 @@ export default function App() {
       }
       await refreshRuns()
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown enqueue failure'
+      const msg = formatClientError(err, 'enqueue', 'Unknown enqueue failure')
       setLastError(msg)
     } finally {
       setRunActionLoading(false)
@@ -350,7 +350,7 @@ export default function App() {
       }
       await refreshRuns()
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown run-control failure'
+      const msg = formatClientError(err, 'run control', 'Unknown run-control failure')
       setLastError(msg)
     } finally {
       setRunActionLoading(false)
@@ -370,6 +370,25 @@ export default function App() {
     setDurationMs(totalDuration)
     setPlaybackMs(0)
     setPlaying(true)
+  }
+
+  function formatClientError(err: unknown, op: string, fallback: string): string {
+    if (err instanceof Error) {
+      const message = err.message?.trim() || ''
+      if (message) {
+        if (/failed to fetch|networkerror|load failed/i.test(message)) {
+          return (
+            `${op} failed: could not reach ${gateway}. ` +
+            `Check service status with scripts/opencommotion.py -status, then open ${gateway}/health.`
+          )
+        }
+        if (/aborted|timeout/i.test(message)) {
+          return `${op} failed: request timed out or was aborted. ${message}`
+        }
+        return message
+      }
+    }
+    return fallback
   }
 
   async function buildApiErrorMessage(res: Response, op: string): Promise<string> {
@@ -436,7 +455,7 @@ export default function App() {
       const data = (await res.json()) as TurnResult
       loadTurn(data)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown run-turn failure'
+      const msg = formatClientError(err, 'orchestrate', 'Unknown run-turn failure')
       setLastError(msg)
     } finally {
       setRunning(false)
@@ -468,7 +487,7 @@ export default function App() {
         setPrompt(finalText)
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown transcription failure'
+      const msg = formatClientError(err, 'transcribe', 'Unknown transcription failure')
       setLastError(msg)
     } finally {
       setTranscribing(false)
@@ -492,7 +511,7 @@ export default function App() {
         throw new Error(await buildApiErrorMessage(res, 'save'))
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown save failure'
+      const msg = formatClientError(err, 'save artifact', 'Unknown save failure')
       setLastError(msg)
     }
   }
@@ -510,7 +529,7 @@ export default function App() {
       const data = (await res.json()) as { results: ArtifactResult[] }
       setResults(data.results)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown search failure'
+      const msg = formatClientError(err, 'search artifacts', 'Unknown search failure')
       setLastError(msg)
     }
   }
@@ -540,6 +559,7 @@ export default function App() {
       return
     }
 
+    let closedByClient = false
     const ws = new WebSocket(
       gatewayApiKey ? `${wsGateway}/v1/events/ws?api_key=${encodeURIComponent(gatewayApiKey)}` : `${wsGateway}/v1/events/ws`,
     )
@@ -584,7 +604,25 @@ export default function App() {
       }
     }
 
+    ws.onerror = () => {
+      setLastError(
+        `event stream error: could not reach ${wsGateway}/v1/events/ws. Check scripts/opencommotion.py -status.`,
+      )
+    }
+
+    ws.onclose = (event) => {
+      if (closedByClient) {
+        return
+      }
+      if (event.code !== 1000) {
+        setLastError(
+          `event stream closed (${event.code}). Check scripts/opencommotion.py -status and reload the page.`,
+        )
+      }
+    }
+
     return () => {
+      closedByClient = true
       window.clearInterval(heartbeat)
       ws.close()
     }
