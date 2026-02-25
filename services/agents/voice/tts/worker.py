@@ -10,7 +10,12 @@ from uuid import uuid4
 
 import httpx
 
-from services.agents.voice.common import normalized_env, require_real_voice_engines
+from services.agents.voice.common import (
+    normalized_env,
+    require_real_voice_engines,
+    voice_openai_api_key_required,
+    voice_openai_ready,
+)
 from services.agents.voice.errors import VoiceEngineError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -50,7 +55,9 @@ def synthesize_segments(text: str, voice: str = "opencommotion-local") -> dict:
                 f"selected={capabilities['selected_engine']}, "
                 f"piper_ready={capabilities['piper']['ready']}, "
                 f"espeak_ready={capabilities['espeak']['ready']}, "
-                f"openai_ready={capabilities['openai_compatible']['ready']}"
+                f"openai_ready={capabilities['openai_compatible']['ready']}, "
+                f"openai_api_key_set={capabilities['openai_compatible']['api_key_set']}, "
+                f"openai_api_key_required={capabilities['openai_compatible']['api_key_required']}"
             ),
         )
 
@@ -82,7 +89,8 @@ def tts_capabilities() -> dict:
     openai_base_url = os.getenv(VOICE_OPENAI_BASE_URL_ENV, "").strip()
     openai_model = os.getenv(VOICE_OPENAI_TTS_MODEL_ENV, "").strip()
     openai_api_key = os.getenv(VOICE_OPENAI_API_KEY_ENV, "").strip()
-    openai_ready = bool(openai_base_url) and bool(openai_model)
+    openai_key_required = voice_openai_api_key_required(openai_base_url)
+    openai_ready = voice_openai_ready(openai_base_url, openai_model, openai_api_key)
 
     return {
         "selected_engine": selected_engine,
@@ -101,6 +109,7 @@ def tts_capabilities() -> dict:
             "base_url": openai_base_url,
             "model": openai_model,
             "api_key_set": bool(openai_api_key),
+            "api_key_required": openai_key_required,
             "ready": openai_ready,
         },
     }
@@ -240,6 +249,7 @@ def _openai_headers() -> dict[str, str]:
 def _render_with_openai_compatible(text: str, output_path: Path, required: bool) -> str | None:
     base_url = os.getenv(VOICE_OPENAI_BASE_URL_ENV, "").rstrip("/")
     model = os.getenv(VOICE_OPENAI_TTS_MODEL_ENV, "").strip()
+    api_key = os.getenv(VOICE_OPENAI_API_KEY_ENV, "").strip()
     if not base_url or not model:
         if required:
             missing = []
@@ -250,6 +260,13 @@ def _render_with_openai_compatible(text: str, output_path: Path, required: bool)
             raise VoiceEngineError(
                 engine="openai-compatible",
                 message=f"Missing required OpenAI-compatible TTS config: {', '.join(missing)}",
+            )
+        return None
+    if voice_openai_api_key_required(base_url) and not api_key:
+        if required:
+            raise VoiceEngineError(
+                engine="openai-compatible",
+                message=f"Missing required OpenAI-compatible TTS config: {VOICE_OPENAI_API_KEY_ENV}",
             )
         return None
 

@@ -362,6 +362,31 @@ export default function App() {
     setPlaying(true)
   }
 
+  async function buildApiErrorMessage(res: Response, op: string): Promise<string> {
+    let details = ''
+    try {
+      const body = (await res.json()) as Record<string, unknown>
+      const raw = (body.detail ?? body) as unknown
+      if (typeof raw === 'string') {
+        details = raw
+      } else if (raw && typeof raw === 'object') {
+        const detailObj = raw as Record<string, unknown>
+        const err = typeof detailObj.error === 'string' ? detailObj.error : ''
+        const provider = typeof detailObj.provider === 'string' ? detailObj.provider : ''
+        const engine = typeof detailObj.engine === 'string' ? detailObj.engine : ''
+        const message = typeof detailObj.message === 'string' ? detailObj.message : ''
+        const parts = [err, provider || engine, message].filter(Boolean)
+        details = parts.join(' | ')
+        if (!details) {
+          details = JSON.stringify(detailObj)
+        }
+      }
+    } catch {
+      // no-op: fallback to status-only error below
+    }
+    return details ? `${op} failed (${res.status}): ${details}` : `${op} failed (${res.status})`
+  }
+
   async function runTurn() {
     setRunning(true)
     setLastError('')
@@ -372,7 +397,7 @@ export default function App() {
         body: JSON.stringify({ session_id: session, prompt }),
       })
       if (!res.ok) {
-        throw new Error(`orchestrate failed (${res.status})`)
+        throw new Error(await buildApiErrorMessage(res, 'orchestrate'))
       }
       const data = (await res.json()) as TurnResult
       loadTurn(data)
@@ -400,7 +425,7 @@ export default function App() {
         body,
       })
       if (!res.ok) {
-        throw new Error(`transcribe failed (${res.status})`)
+        throw new Error(await buildApiErrorMessage(res, 'transcribe'))
       }
       const data = (await res.json()) as { transcript: { final: string } }
       const finalText = data.transcript.final || ''

@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ENV_EXAMPLE_PATH = PROJECT_ROOT / ".env.example"
@@ -64,6 +65,15 @@ VALID_LLM_PROVIDERS = {
 VALID_STT_ENGINES = {"auto", "hint", "faster-whisper", "vosk", "openai-compatible", "text-fallback"}
 VALID_TTS_ENGINES = {"auto", "piper", "espeak", "openai-compatible", "tone-fallback"}
 VALID_AUTH_MODES = {"api-key", "network-trust"}
+LOCAL_VOICE_HOSTS = {"127.0.0.1", "localhost", "0.0.0.0", "::1"}
+
+
+def _voice_api_key_required(base_url: str) -> bool:
+    parsed = urlparse(base_url)
+    host = (parsed.hostname or "").strip().lower()
+    if not host:
+        return False
+    return host not in LOCAL_VOICE_HOSTS
 
 
 def parse_env(path: Path) -> dict[str, str]:
@@ -147,19 +157,27 @@ def validate_setup(values: dict[str, str]) -> dict[str, Any]:
     if stt not in VALID_STT_ENGINES:
         errors.append(f"Unsupported STT engine: {stt}")
     if stt == "openai-compatible":
-        if not values.get("OPENCOMMOTION_VOICE_OPENAI_BASE_URL", "").strip():
+        stt_base_url = values.get("OPENCOMMOTION_VOICE_OPENAI_BASE_URL", "").strip()
+        stt_api_key = values.get("OPENCOMMOTION_VOICE_OPENAI_API_KEY", "").strip()
+        if not stt_base_url:
             errors.append("OPENCOMMOTION_VOICE_OPENAI_BASE_URL is required for openai-compatible STT")
         if not values.get("OPENCOMMOTION_VOICE_STT_MODEL", "").strip():
             errors.append("OPENCOMMOTION_VOICE_STT_MODEL is required for openai-compatible STT")
+        if stt_base_url and _voice_api_key_required(stt_base_url) and not stt_api_key:
+            errors.append("OPENCOMMOTION_VOICE_OPENAI_API_KEY is required for remote openai-compatible STT")
 
     tts = values.get("OPENCOMMOTION_TTS_ENGINE", "auto").strip().lower()
     if tts not in VALID_TTS_ENGINES:
         errors.append(f"Unsupported TTS engine: {tts}")
     if tts == "openai-compatible":
-        if not values.get("OPENCOMMOTION_VOICE_OPENAI_BASE_URL", "").strip():
+        tts_base_url = values.get("OPENCOMMOTION_VOICE_OPENAI_BASE_URL", "").strip()
+        tts_api_key = values.get("OPENCOMMOTION_VOICE_OPENAI_API_KEY", "").strip()
+        if not tts_base_url:
             errors.append("OPENCOMMOTION_VOICE_OPENAI_BASE_URL is required for openai-compatible TTS")
         if not values.get("OPENCOMMOTION_VOICE_TTS_MODEL", "").strip():
             errors.append("OPENCOMMOTION_VOICE_TTS_MODEL is required for openai-compatible TTS")
+        if tts_base_url and _voice_api_key_required(tts_base_url) and not tts_api_key:
+            errors.append("OPENCOMMOTION_VOICE_OPENAI_API_KEY is required for remote openai-compatible TTS")
 
     auth_mode = values.get("OPENCOMMOTION_AUTH_MODE", "api-key").strip().lower()
     if auth_mode not in VALID_AUTH_MODES:

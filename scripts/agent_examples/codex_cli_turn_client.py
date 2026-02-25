@@ -8,6 +8,20 @@ import os
 import httpx
 
 
+def _request_json(client: httpx.Client, method: str, url: str, op: str, **kwargs) -> dict:
+    response = client.request(method, url, **kwargs)
+    if response.is_success:
+        return response.json()
+    detail = response.text
+    try:
+        payload = response.json()
+        detail_obj = payload.get("detail", payload)
+        detail = json.dumps(detail_obj)
+    except Exception:  # noqa: BLE001
+        pass
+    raise RuntimeError(f"{op} failed ({response.status_code}): {detail}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="OpenCommotion turn client configured for codex-cli provider")
     parser.add_argument("--gateway", default="http://127.0.0.1:8000")
@@ -34,16 +48,23 @@ def main() -> None:
                     "OPENCOMMOTION_CODEX_MODEL": args.codex_model,
                 }
             }
-            setup = client.post(f"{gateway}/v1/setup/state", headers=headers, json=setup_payload)
-            setup.raise_for_status()
+            _request_json(
+                client,
+                "POST",
+                f"{gateway}/v1/setup/state",
+                "setup",
+                headers=headers,
+                json=setup_payload,
+            )
 
-        orchestrate = client.post(
+        turn = _request_json(
+            client,
+            "POST",
             f"{gateway}/v1/orchestrate",
+            "orchestrate",
             headers=headers,
             json={"session_id": args.session, "prompt": args.prompt},
         )
-        orchestrate.raise_for_status()
-        turn = orchestrate.json()
 
     segments = turn.get("voice", {}).get("segments", [])
     summary = {

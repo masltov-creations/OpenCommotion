@@ -11,7 +11,12 @@ from re import findall
 
 import httpx
 
-from services.agents.voice.common import normalized_env, require_real_voice_engines
+from services.agents.voice.common import (
+    normalized_env,
+    require_real_voice_engines,
+    voice_openai_api_key_required,
+    voice_openai_ready,
+)
 from services.agents.voice.errors import VoiceEngineError
 
 STT_ENGINE_ENV = "OPENCOMMOTION_STT_ENGINE"
@@ -104,7 +109,9 @@ def transcribe_audio(audio: bytes, hint: str = "") -> dict:
                 f"selected={capabilities['selected_engine']}, "
                 f"faster_whisper_ready={capabilities['faster_whisper']['ready']}, "
                 f"vosk_ready={capabilities['vosk']['ready']}, "
-                f"openai_ready={capabilities['openai_compatible']['ready']}"
+                f"openai_ready={capabilities['openai_compatible']['ready']}, "
+                f"openai_api_key_set={capabilities['openai_compatible']['api_key_set']}, "
+                f"openai_api_key_required={capabilities['openai_compatible']['api_key_required']}"
             ),
         )
 
@@ -124,7 +131,8 @@ def stt_capabilities() -> dict:
     openai_base_url = os.getenv(VOICE_OPENAI_BASE_URL_ENV, "").strip()
     openai_model = os.getenv(VOICE_OPENAI_STT_MODEL_ENV, "").strip()
     openai_api_key = os.getenv(VOICE_OPENAI_API_KEY_ENV, "").strip()
-    openai_ready = bool(openai_base_url) and bool(openai_model)
+    openai_key_required = voice_openai_api_key_required(openai_base_url)
+    openai_ready = voice_openai_ready(openai_base_url, openai_model, openai_api_key)
 
     return {
         "selected_engine": selected_engine,
@@ -144,6 +152,7 @@ def stt_capabilities() -> dict:
             "base_url": openai_base_url,
             "model": openai_model,
             "api_key_set": bool(openai_api_key),
+            "api_key_required": openai_key_required,
             "ready": openai_ready,
         },
     }
@@ -192,6 +201,7 @@ def _openai_headers() -> dict[str, str]:
 def _transcribe_with_openai_compatible(audio: bytes, required: bool) -> tuple[str, float] | None:
     base_url = os.getenv(VOICE_OPENAI_BASE_URL_ENV, "").rstrip("/")
     model = os.getenv(VOICE_OPENAI_STT_MODEL_ENV, "").strip()
+    api_key = os.getenv(VOICE_OPENAI_API_KEY_ENV, "").strip()
     if not base_url or not model:
         if required:
             missing = []
@@ -202,6 +212,13 @@ def _transcribe_with_openai_compatible(audio: bytes, required: bool) -> tuple[st
             raise VoiceEngineError(
                 engine="openai-compatible",
                 message=f"Missing required OpenAI-compatible STT config: {', '.join(missing)}",
+            )
+        return None
+    if voice_openai_api_key_required(base_url) and not api_key:
+        if required:
+            raise VoiceEngineError(
+                engine="openai-compatible",
+                message=f"Missing required OpenAI-compatible STT config: {VOICE_OPENAI_API_KEY_ENV}",
             )
         return None
 

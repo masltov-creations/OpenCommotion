@@ -167,6 +167,7 @@ python3 scripts/opencommotion.py run
    - Open http://127.0.0.1:8000
    - Setup Wizard -> provider: `codex-cli`
    - Binary: `codex` (or absolute path)
+   - Voice policy: for first test, keep strict real-engine mode off unless your TTS engine is fully configured
    - Optional model: set if you want non-default behavior
    - Click **Validate Setup** and **Save Setup**
 
