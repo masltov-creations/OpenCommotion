@@ -1,15 +1,26 @@
 # OpenCommotion
 
-OpenCommotion is an app for generating synchronized text, voice, and visual animation from prompts.
+OpenCommotion turns a prompt into a synchronized experience: text, voice, and visual animation, all in one app.
 
-## Start Here
+If Python had a storyboard engine, this would be it.
+
+## Why People Care
+
+- Show ideas as animated, narrated scenes instead of static text.
+- Run autonomous agent turns with visible progress and controls.
+- Save outputs as reusable artifacts for demos, teaching, and product workflows.
+- Connect external agents (Codex, OpenClaw, custom clients) without building custom UI plumbing.
+
+![OpenCommotion UI](docs/assets/opencommotion-ui.png)
+
+## Quickstart
 
 Prereqs:
 - Python 3.11+
 - Node.js 20+
 - npm
 
-Install and run:
+Install, configure, and run:
 
 ```bash
 python3 scripts/opencommotion.py install
@@ -17,8 +28,38 @@ python3 scripts/opencommotion.py setup
 python3 scripts/opencommotion.py run
 ```
 
-Open:
-- App UI: http://127.0.0.1:8000
+Open the app:
+- http://127.0.0.1:8000
+
+Stop the app:
+
+```bash
+python3 scripts/opencommotion.py down
+```
+
+## First 2 Minutes In The App
+
+1. Open **Setup Wizard**.
+2. Choose your LLM provider and voice policy.
+3. Click **Validate Setup** and **Save Setup**.
+4. Enter a prompt and click **Run Turn**.
+5. Watch synchronized text + voice + animation playback.
+6. Save interesting results as artifacts.
+7. Use **Agent Run Manager** when you want queued/autonomous runs.
+
+## Daily Use
+
+Start:
+
+```bash
+python3 scripts/opencommotion.py run
+```
+
+Check health:
+
+```bash
+python3 scripts/opencommotion.py status
+```
 
 Stop:
 
@@ -26,37 +67,7 @@ Stop:
 python3 scripts/opencommotion.py down
 ```
 
-## Use The App
-
-1. Open **Setup Wizard**.
-2. Pick your LLM provider and voice policy.
-3. Click **Validate Setup**, then **Save Setup**.
-4. Enter a prompt and click **Run Turn**.
-5. Watch text + voice + animation playback in sync.
-6. Save useful outputs as artifacts.
-7. Use **Agent Run Manager** for autonomous queues (`run_once|pause|resume|stop|drain`).
-
-## Daily Workflow
-
-Start app:
-
-```bash
-python3 scripts/opencommotion.py run
-```
-
-Check status:
-
-```bash
-python3 scripts/opencommotion.py status
-```
-
-Stop app:
-
-```bash
-python3 scripts/opencommotion.py down
-```
-
-## Connect Agents (Python)
+## Connect Your Agents (Python-first)
 
 Robust default client:
 
@@ -76,7 +87,7 @@ python3 scripts/agent_examples/openclaw_cli_turn_client.py
 python3 scripts/agent_examples/openclaw_openai_turn_client.py --base-url http://127.0.0.1:8002/v1
 ```
 
-REST + websocket example:
+REST + WebSocket baseline example:
 
 ```bash
 . .venv/bin/activate
@@ -95,14 +106,14 @@ Client auth:
 - HTTP header: `x-api-key: <key>`
 - WebSocket: `ws://127.0.0.1:8000/v1/events/ws?api_key=<key>`
 
-LLM provider values:
+LLM providers:
 - `heuristic|ollama|openai-compatible|codex-cli|openclaw-cli|openclaw-openai`
 
 Voice engines:
 - STT: `auto|faster-whisper|vosk|openai-compatible|text-fallback`
 - TTS: `auto|piper|espeak|openai-compatible|tone-fallback`
 
-## Health And Diagnostics
+## Diagnostics
 
 ```bash
 python3 scripts/opencommotion.py status
@@ -110,7 +121,7 @@ python3 scripts/opencommotion.py preflight
 python3 scripts/opencommotion.py doctor
 ```
 
-## API Surface
+## Core API Surface
 
 - `GET /v1/setup/state`
 - `POST /v1/setup/validate`
@@ -137,7 +148,7 @@ Use:
 - `deploy/prometheus/*`
 - `deploy/grafana/*`
 
-Deploy steps:
+Deploy:
 1. Copy `.env.example` to `.env` and set production values.
 2. Put TLS certs in `deploy/nginx/certs/` (`fullchain.pem`, `privkey.pem`).
 3. Run `docker compose -f docker-compose.prod.yml up -d --build`.
@@ -154,7 +165,7 @@ Backs up:
 - `data/artifacts/bundles/`
 - `runtime/agent-runs/agent_manager.db`
 
-## Test Gates
+## Validation Gates
 
 ```bash
 python3 scripts/opencommotion.py test
@@ -164,7 +175,7 @@ python3 scripts/opencommotion.py test-complete
 python3 scripts/opencommotion.py fresh-agent-e2e
 ```
 
-## Customization
+## Extend It
 
 - Gateway APIs and run manager: `services/gateway/app/main.py`
 - Orchestrator: `services/orchestrator/app/main.py`
@@ -172,7 +183,7 @@ python3 scripts/opencommotion.py fresh-agent-e2e
 - Voice engines: `services/agents/voice/stt/worker.py`, `services/agents/voice/tts/worker.py`
 - UI runtime and wizard: `apps/ui/src/App.tsx`
 
-## More Docs
+## More Documentation
 
 - `docs/AGENT_CONNECTION.md`
 - `docs/USAGE_PATTERNS.md`
