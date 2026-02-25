@@ -11,6 +11,39 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
+COMMANDS = [
+    "install",
+    "setup",
+    "run",
+    "dev",
+    "down",
+    "preflight",
+    "status",
+    "test",
+    "test-ui",
+    "test-e2e",
+    "test-complete",
+    "fresh-agent-e2e",
+    "doctor",
+    "quickstart",
+]
+COMMAND_FLAG_ALIASES = {
+    "-install": "install",
+    "-setup": "setup",
+    "-run": "run",
+    "-dev": "dev",
+    "-down": "down",
+    "-stop": "down",
+    "-preflight": "preflight",
+    "-status": "status",
+    "-test": "test",
+    "-test-ui": "test-ui",
+    "-test-e2e": "test-e2e",
+    "-test-complete": "test-complete",
+    "-fresh-agent-e2e": "fresh-agent-e2e",
+    "-doctor": "doctor",
+    "-quickstart": "quickstart",
+}
 
 
 def _venv_python() -> str:
@@ -212,30 +245,42 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "command",
-        choices=[
-            "install",
-            "setup",
-            "run",
-            "dev",
-            "down",
-            "preflight",
-            "status",
-            "test",
-            "test-ui",
-            "test-e2e",
-            "test-complete",
-            "fresh-agent-e2e",
-            "doctor",
-            "quickstart",
-        ],
+        nargs="?",
+        choices=COMMANDS,
         help="Command to execute",
     )
+    for flag, command in COMMAND_FLAG_ALIASES.items():
+        parser.add_argument(
+            flag,
+            action="store_true",
+            help=f"Alias for '{command}' command",
+        )
     return parser
 
 
+def _selected_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> str | None:
+    selected: list[str] = []
+    if args.command:
+        selected.append(args.command)
+    for flag, command in COMMAND_FLAG_ALIASES.items():
+        attr = flag.lstrip("-").replace("-", "_")
+        if getattr(args, attr, False):
+            selected.append(command)
+    unique = sorted(set(selected))
+    if not unique:
+        parser.print_help()
+        return None
+    if len(unique) > 1:
+        parser.error(f"Choose one command at a time; got: {', '.join(unique)}")
+    return unique[0]
+
+
 def main() -> int:
-    args = build_parser().parse_args()
-    command = args.command
+    parser = build_parser()
+    args = parser.parse_args()
+    command = _selected_command(args, parser)
+    if command is None:
+        return 2
     if command == "install":
         return cmd_install()
     if command == "setup":

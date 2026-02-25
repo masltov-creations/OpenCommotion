@@ -44,6 +44,24 @@ Manual start (if needed):
 python3 scripts/opencommotion.py run
 ```
 
+Fast command aliases (same script, shorter typing):
+
+```bash
+python3 scripts/opencommotion.py -setup
+python3 scripts/opencommotion.py -run
+python3 scripts/opencommotion.py -status
+python3 scripts/opencommotion.py -stop
+```
+
+PowerShell equivalent:
+
+```powershell
+py scripts\opencommotion.py -setup
+py scripts\opencommotion.py -run
+py scripts\opencommotion.py -status
+py scripts\opencommotion.py -stop
+```
+
 Open the app:
 - http://127.0.0.1:8000
 
