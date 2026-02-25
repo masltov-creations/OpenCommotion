@@ -773,17 +773,20 @@ export default function App() {
                   <option value="api-key">api-key</option>
                   <option value="network-trust">network-trust</option>
                 </select>
+                <p className="muted">
+                  network-trust default allow list is local machine only: 127.0.0.1/32,::1/128
+                </p>
                 <label className="muted">API keys (comma-separated)</label>
                 <input
                   value={setupDraft.OPENCOMMOTION_API_KEYS || ''}
                   onChange={(e) => updateSetupDraft('OPENCOMMOTION_API_KEYS', e.target.value)}
                   placeholder="dev-opencommotion-key"
                 />
-                <label className="muted">Allowed IP/CIDR list</label>
+                <label className="muted">Allowed IP/CIDR list (network-trust mode)</label>
                 <input
                   value={setupDraft.OPENCOMMOTION_ALLOWED_IPS || ''}
                   onChange={(e) => updateSetupDraft('OPENCOMMOTION_ALLOWED_IPS', e.target.value)}
-                  placeholder="127.0.0.1/32,::1/128"
+                  placeholder="127.0.0.1/32,::1/128 (local-machine-only default)"
                 />
               </div>
             ) : null}

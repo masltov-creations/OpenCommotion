@@ -266,7 +266,7 @@ def build_configuration(existing: dict[str, str]) -> tuple[dict[str, str], list[
         )
     else:
         config["OPENCOMMOTION_ALLOWED_IPS"] = ask(
-            "Allowed IP/CIDR list (comma-separated)",
+            "Allowed IP/CIDR list (comma-separated, default local machine only)",
             config.get("OPENCOMMOTION_ALLOWED_IPS", "127.0.0.1/32,::1/128"),
         )
 

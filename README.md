@@ -247,6 +247,8 @@ Headless/CI note:
 Auth defaults:
 - `OPENCOMMOTION_AUTH_MODE=api-key`
 - `OPENCOMMOTION_API_KEYS=dev-opencommotion-key`
+- `OPENCOMMOTION_ALLOWED_IPS=127.0.0.1/32,::1/128` (local-machine-only default for `network-trust`)
+- In `network-trust` mode, do not leave `OPENCOMMOTION_ALLOWED_IPS` empty unless you intentionally want all IPs allowed.
 
 Client auth:
 - HTTP header: `x-api-key: <key>`

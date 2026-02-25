@@ -184,6 +184,11 @@ def validate_setup(values: dict[str, str]) -> dict[str, Any]:
         errors.append(f"Unsupported auth mode: {auth_mode}")
     if auth_mode == "api-key" and not values.get("OPENCOMMOTION_API_KEYS", "").strip():
         warnings.append("OPENCOMMOTION_API_KEYS is empty; requests will be unauthenticated")
+    if auth_mode == "network-trust" and not values.get("OPENCOMMOTION_ALLOWED_IPS", "").strip():
+        warnings.append(
+            "OPENCOMMOTION_ALLOWED_IPS is empty; network-trust will allow all IPs. "
+            "Use 127.0.0.1/32,::1/128 for local-machine-only access."
+        )
 
     return {"ok": len(errors) == 0, "errors": errors, "warnings": warnings}
 
