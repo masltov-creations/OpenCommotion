@@ -22,11 +22,21 @@ Prereqs:
 
 One-line bootstrap (clone/update + setup):
 
+Linux/macOS/Git Bash:
+
 ```bash
 mkdir -p /home/$USER/apps && ( [ -d /home/$USER/apps/opencommotion/.git ] && git -C /home/$USER/apps/opencommotion pull --ff-only origin main || git clone https://github.com/masltov-creations/opencommotion /home/$USER/apps/opencommotion ) && cd /home/$USER/apps/opencommotion && ./scripts/setup.sh
 ```
 
-Then run:
+PowerShell (via WSL):
+
+```powershell
+wsl bash -lc 'mkdir -p ~/apps && ( [ -d ~/apps/opencommotion/.git ] && git -C ~/apps/opencommotion pull --ff-only origin main || git clone https://github.com/masltov-creations/opencommotion ~/apps/opencommotion ) && cd ~/apps/opencommotion && ./scripts/setup.sh'
+```
+
+That command installs dependencies, runs the setup wizard, and starts the app.
+
+Manual start (if needed):
 
 ```bash
 python3 scripts/opencommotion.py run
@@ -104,8 +114,16 @@ python3 scripts/agent_examples/rest_ws_agent_client.py \
 
 1. Bootstrap repo and dependencies:
 
+Linux/macOS/Git Bash:
+
 ```bash
 mkdir -p /home/$USER/apps && ( [ -d /home/$USER/apps/opencommotion/.git ] && git -C /home/$USER/apps/opencommotion pull --ff-only origin main || git clone https://github.com/masltov-creations/opencommotion /home/$USER/apps/opencommotion ) && cd /home/$USER/apps/opencommotion && ./scripts/setup.sh
+```
+
+PowerShell (via WSL):
+
+```powershell
+wsl bash -lc 'mkdir -p ~/apps && ( [ -d ~/apps/opencommotion/.git ] && git -C ~/apps/opencommotion pull --ff-only origin main || git clone https://github.com/masltov-creations/opencommotion ~/apps/opencommotion ) && cd ~/apps/opencommotion && ./scripts/setup.sh'
 ```
 
 2. Authenticate Codex CLI once:
@@ -114,14 +132,15 @@ mkdir -p /home/$USER/apps && ( [ -d /home/$USER/apps/opencommotion/.git ] && git
 codex login
 ```
 
-3. Verify Codex CLI is available to this shell:
+3. Verify Codex CLI and app status:
 
 ```bash
 python3 scripts/opencommotion.py doctor
+python3 scripts/opencommotion.py status
 codex --version
 ```
 
-4. Start OpenCommotion:
+4. If app is not running, start it:
 
 ```bash
 python3 scripts/opencommotion.py run
@@ -171,6 +190,9 @@ curl -sS -X POST http://127.0.0.1:8000/v1/agent-runs/<run_id>/enqueue \
 ```bash
 python3 scripts/opencommotion.py down
 ```
+
+Headless/CI note:
+- Use `./scripts/setup.sh --no-run` if you want setup without starting services.
 
 ## Defaults You Should Know
 
