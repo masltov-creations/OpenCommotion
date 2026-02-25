@@ -34,8 +34,8 @@ PowerShell (via WSL):
 wsl bash -lc 'mkdir -p ~/apps && ( [ -d ~/apps/opencommotion/.git ] && git -C ~/apps/opencommotion pull --ff-only origin main || git clone https://github.com/masltov-creations/opencommotion ~/apps/opencommotion ) && cd ~/apps/opencommotion && bash scripts/setup.sh'
 ```
 
-That command installs dependencies, runs the setup wizard, starts the app, then offers to open your browser (default: yes).
-Run it from an interactive terminal so the wizard and browser prompt can appear.
+That command installs dependencies, starts the app, then offers to open your browser (default: yes).
+Run it from an interactive terminal so the browser prompt can appear.
 To avoid `Permission denied`, run setup via `bash scripts/setup.sh` (as shown above), not `./scripts/setup.sh`.
 
 Manual start (if needed):
@@ -70,7 +70,7 @@ bash scripts/setup.sh
 
 ## First 2 Minutes In The App
 
-1. Open **Setup Wizard**.
+1. Click **Settings & Setup**.
 2. Choose your LLM provider and voice policy.
 3. Click **Validate Setup** and **Save Setup**.
 4. Enter a prompt and click **Run Turn**.
@@ -165,6 +165,7 @@ python3 scripts/opencommotion.py run
 
 5. Configure Codex provider in the app:
    - Open http://127.0.0.1:8000
+   - Click **Settings & Setup**
    - Setup Wizard -> provider: `codex-cli`
    - Binary: `codex` (or absolute path)
    - Voice policy: for first test, keep strict real-engine mode off unless your TTS engine is fully configured
@@ -212,6 +213,7 @@ python3 scripts/opencommotion.py down
 Headless/CI note:
 - Use `bash scripts/setup.sh --no-run` if you want setup without starting services.
 - Use `bash scripts/setup.sh --no-open` if you want startup without browser prompt.
+- Use `bash scripts/setup.sh --with-cli-setup` if you want to run terminal setup wizard before startup.
 
 ## Defaults You Should Know
 

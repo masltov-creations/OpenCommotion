@@ -140,6 +140,7 @@ export default function App() {
   const [runtimeCaps, setRuntimeCaps] = useState<RuntimeCapabilities | null>(null)
   const [capsLoading, setCapsLoading] = useState(false)
   const [capsError, setCapsError] = useState('')
+  const [showSetup, setShowSetup] = useState(false)
   const [setupStep, setSetupStep] = useState(1)
   const [setupDraft, setSetupDraft] = useState<Record<string, string>>({})
   const [setupErrors, setSetupErrors] = useState<string[]>([])
@@ -170,7 +171,7 @@ export default function App() {
     try {
       const res = await fetch(`${gateway}/v1/runtime/capabilities`, { headers: authHeaders })
       if (!res.ok) {
-        throw new Error(`runtime capabilities failed (${res.status})`)
+        throw new Error(await buildApiErrorMessage(res, 'runtime capabilities'))
       }
       const data = (await res.json()) as RuntimeCapabilities
       setRuntimeCaps(data)
@@ -190,7 +191,7 @@ export default function App() {
     try {
       const res = await fetch(`${gateway}/v1/setup/state`, { headers: authHeaders })
       if (!res.ok) {
-        throw new Error(`setup state failed (${res.status})`)
+        throw new Error(await buildApiErrorMessage(res, 'setup state'))
       }
       const data = (await res.json()) as SetupStateResponse
       setSetupDraft(data.state || {})
@@ -217,7 +218,7 @@ export default function App() {
         body: JSON.stringify({ values: setupDraft }),
       })
       if (!res.ok) {
-        throw new Error(`setup validate failed (${res.status})`)
+        throw new Error(await buildApiErrorMessage(res, 'setup validate'))
       }
       const data = (await res.json()) as SetupValidateResponse
       setSetupErrors(data.errors || [])
@@ -241,7 +242,7 @@ export default function App() {
         body: JSON.stringify({ values: setupDraft }),
       })
       if (!res.ok) {
-        throw new Error(`setup save failed (${res.status})`)
+        throw new Error(await buildApiErrorMessage(res, 'setup save'))
       }
       const data = (await res.json()) as { ok: boolean; restart_required?: boolean; warnings?: string[] }
       setSetupWarnings(data.warnings || [])
@@ -263,7 +264,7 @@ export default function App() {
     try {
       const res = await fetch(`${gateway}/v1/agent-runs`, { headers: authHeaders })
       if (!res.ok) {
-        throw new Error(`list runs failed (${res.status})`)
+        throw new Error(await buildApiErrorMessage(res, 'list runs'))
       }
       const data = (await res.json()) as { runs: AgentRun[] }
       const rows = data.runs || []
@@ -286,7 +287,7 @@ export default function App() {
         body: JSON.stringify({ label: `run-${Date.now()}`, auto_run: true }),
       })
       if (!res.ok) {
-        throw new Error(`create run failed (${res.status})`)
+        throw new Error(await buildApiErrorMessage(res, 'create run'))
       }
       const data = (await res.json()) as { run: AgentRun }
       if (data.run?.run_id) {
@@ -313,7 +314,7 @@ export default function App() {
         body: JSON.stringify({ prompt: queuedPrompt }),
       })
       if (!res.ok) {
-        throw new Error(`enqueue failed (${res.status})`)
+        throw new Error(await buildApiErrorMessage(res, 'enqueue'))
       }
       await refreshRuns()
     } catch (err) {
@@ -336,7 +337,7 @@ export default function App() {
         body: JSON.stringify({ action }),
       })
       if (!res.ok) {
-        throw new Error(`run control failed (${res.status})`)
+        throw new Error(await buildApiErrorMessage(res, 'run control'))
       }
       await refreshRuns()
     } catch (err) {
@@ -365,20 +366,44 @@ export default function App() {
   async function buildApiErrorMessage(res: Response, op: string): Promise<string> {
     let details = ''
     try {
-      const body = (await res.json()) as Record<string, unknown>
-      const raw = (body.detail ?? body) as unknown
-      if (typeof raw === 'string') {
-        details = raw
-      } else if (raw && typeof raw === 'object') {
-        const detailObj = raw as Record<string, unknown>
-        const err = typeof detailObj.error === 'string' ? detailObj.error : ''
-        const provider = typeof detailObj.provider === 'string' ? detailObj.provider : ''
-        const engine = typeof detailObj.engine === 'string' ? detailObj.engine : ''
-        const message = typeof detailObj.message === 'string' ? detailObj.message : ''
-        const parts = [err, provider || engine, message].filter(Boolean)
-        details = parts.join(' | ')
-        if (!details) {
-          details = JSON.stringify(detailObj)
+      const rawText = (await res.text()).trim()
+      if (rawText) {
+        try {
+          const body = JSON.parse(rawText) as Record<string, unknown>
+          const raw = (body.detail ?? body) as unknown
+          if (typeof raw === 'string') {
+            details = raw
+          } else if (Array.isArray(raw)) {
+            const messages = raw
+              .map((item) => {
+                if (typeof item === 'string') {
+                  return item
+                }
+                if (item && typeof item === 'object') {
+                  const row = item as Record<string, unknown>
+                  if (typeof row.msg === 'string') {
+                    return row.msg
+                  }
+                  return JSON.stringify(row)
+                }
+                return ''
+              })
+              .filter(Boolean)
+            details = messages.join(' | ')
+          } else if (raw && typeof raw === 'object') {
+            const detailObj = raw as Record<string, unknown>
+            const err = typeof detailObj.error === 'string' ? detailObj.error : ''
+            const provider = typeof detailObj.provider === 'string' ? detailObj.provider : ''
+            const engine = typeof detailObj.engine === 'string' ? detailObj.engine : ''
+            const message = typeof detailObj.message === 'string' ? detailObj.message : ''
+            const parts = [err, provider || engine, message].filter(Boolean)
+            details = parts.join(' | ')
+            if (!details) {
+              details = JSON.stringify(detailObj)
+            }
+          }
+        } catch {
+          details = rawText
         }
       }
     } catch {
@@ -455,7 +480,7 @@ export default function App() {
         }),
       })
       if (!res.ok) {
-        throw new Error(`save failed (${res.status})`)
+        throw new Error(await buildApiErrorMessage(res, 'save'))
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown save failure'
@@ -471,7 +496,7 @@ export default function App() {
         { headers: authHeaders },
       )
       if (!res.ok) {
-        throw new Error(`search failed (${res.status})`)
+        throw new Error(await buildApiErrorMessage(res, 'search'))
       }
       const data = (await res.json()) as { results: ArtifactResult[] }
       setResults(data.results)
@@ -528,7 +553,9 @@ export default function App() {
           return
         }
         if (parsed.event_type === 'agent.turn.failed') {
-          setLastError('Agent run turn failed. Check run status for details.')
+          const payload = parsed.payload as { error?: string } | undefined
+          const message = payload?.error?.trim()
+          setLastError(message ? `agent.turn.failed: ${message}` : 'Agent run turn failed. Check run status for details.')
           void refreshRuns()
           return
         }
@@ -595,127 +622,134 @@ export default function App() {
       <aside className="panel">
         <h1>OpenCommotion</h1>
         <p>Text + voice + motion synchronized visual computing.</p>
-        <div className="setup-panel">
-          <h3>Setup Status</h3>
-          <p className="muted">LLM provider: {llmProvider}</p>
-          <p className="muted">Active route: {llmEffectiveProvider}</p>
-          <p className="muted">LLM ready: {llmReady ? 'yes' : 'needs config'}</p>
-          <p className="muted">STT engine: {sttEngine}</p>
-          <p className="muted">TTS engine: {ttsEngine}</p>
-          {runtimeCaps?.llm?.message ? <p className="error">{runtimeCaps.llm.message}</p> : null}
-          {capsError ? <p className="error">{capsError}</p> : null}
-          <div className="row">
-            <button onClick={refreshRuntimeCapabilities} disabled={capsLoading}>
-              {capsLoading ? 'Refreshing...' : 'Refresh Setup'}
-            </button>
-            <button onClick={loadSetupState} disabled={setupLoading}>
-              {setupLoading ? 'Loading...' : 'Load Wizard'}
-            </button>
-          </div>
-          <p className="muted">Setup Wizard step {setupStep}/3</p>
-          <div className="row">
-            <button onClick={() => setSetupStep((current) => Math.max(1, current - 1))} disabled={setupStep <= 1}>
-              Previous
-            </button>
-            <button onClick={() => setSetupStep((current) => Math.min(3, current + 1))} disabled={setupStep >= 3}>
-              Next
-            </button>
-          </div>
-          {setupStep === 1 ? (
-            <div>
-              <label className="muted">LLM provider</label>
-              <select
-                value={setupDraft.OPENCOMMOTION_LLM_PROVIDER || 'ollama'}
-                onChange={(e) => updateSetupDraft('OPENCOMMOTION_LLM_PROVIDER', e.target.value)}
-              >
-                <option value="ollama">ollama</option>
-                <option value="openai-compatible">openai-compatible</option>
-                <option value="codex-cli">codex-cli</option>
-                <option value="openclaw-cli">openclaw-cli</option>
-                <option value="openclaw-openai">openclaw-openai</option>
-                <option value="heuristic">heuristic</option>
-              </select>
-              <label className="muted">Model</label>
-              <input
-                value={setupDraft.OPENCOMMOTION_LLM_MODEL || ''}
-                onChange={(e) => updateSetupDraft('OPENCOMMOTION_LLM_MODEL', e.target.value)}
-                placeholder="provider model"
-              />
-            </div>
-          ) : null}
-          {setupStep === 2 ? (
-            <div>
-              <label className="muted">STT engine</label>
-              <select
-                value={setupDraft.OPENCOMMOTION_STT_ENGINE || 'auto'}
-                onChange={(e) => updateSetupDraft('OPENCOMMOTION_STT_ENGINE', e.target.value)}
-              >
-                <option value="auto">auto</option>
-                <option value="faster-whisper">faster-whisper</option>
-                <option value="vosk">vosk</option>
-                <option value="openai-compatible">openai-compatible</option>
-                <option value="text-fallback">text-fallback</option>
-              </select>
-              <label className="muted">TTS engine</label>
-              <select
-                value={setupDraft.OPENCOMMOTION_TTS_ENGINE || 'auto'}
-                onChange={(e) => updateSetupDraft('OPENCOMMOTION_TTS_ENGINE', e.target.value)}
-              >
-                <option value="auto">auto</option>
-                <option value="piper">piper</option>
-                <option value="espeak">espeak</option>
-                <option value="openai-compatible">openai-compatible</option>
-                <option value="tone-fallback">tone-fallback</option>
-              </select>
-              <label className="muted">Strict real engines</label>
-              <select
-                value={setupDraft.OPENCOMMOTION_VOICE_REQUIRE_REAL_ENGINES || 'false'}
-                onChange={(e) => updateSetupDraft('OPENCOMMOTION_VOICE_REQUIRE_REAL_ENGINES', e.target.value)}
-              >
-                <option value="false">false</option>
-                <option value="true">true</option>
-              </select>
-            </div>
-          ) : null}
-          {setupStep === 3 ? (
-            <div>
-              <label className="muted">Auth mode</label>
-              <select
-                value={setupDraft.OPENCOMMOTION_AUTH_MODE || 'api-key'}
-                onChange={(e) => updateSetupDraft('OPENCOMMOTION_AUTH_MODE', e.target.value)}
-              >
-                <option value="api-key">api-key</option>
-                <option value="network-trust">network-trust</option>
-              </select>
-              <label className="muted">API keys (comma-separated)</label>
-              <input
-                value={setupDraft.OPENCOMMOTION_API_KEYS || ''}
-                onChange={(e) => updateSetupDraft('OPENCOMMOTION_API_KEYS', e.target.value)}
-                placeholder="dev-opencommotion-key"
-              />
-              <label className="muted">Allowed IP/CIDR list</label>
-              <input
-                value={setupDraft.OPENCOMMOTION_ALLOWED_IPS || ''}
-                onChange={(e) => updateSetupDraft('OPENCOMMOTION_ALLOWED_IPS', e.target.value)}
-                placeholder="127.0.0.1/32,::1/128"
-              />
-            </div>
-          ) : null}
-          <div className="row">
-            <button onClick={validateSetupDraft}>Validate Setup</button>
-            <button onClick={saveSetupDraft} disabled={setupSaving}>
-              {setupSaving ? 'Saving...' : 'Save Setup'}
-            </button>
-          </div>
-          {setupMessage ? <p className="muted">{setupMessage}</p> : null}
-          {setupWarnings.map((warning) => (
-            <p className="muted" key={warning}>{warning}</p>
-          ))}
-          {setupErrors.map((error) => (
-            <p className="error" key={error}>{error}</p>
-          ))}
-          <p className="muted">CLI fallback: `python3 scripts/opencommotion.py setup`</p>
+        <div className="row">
+          <button onClick={() => setShowSetup((current) => !current)}>
+            {showSetup ? 'Hide Settings & Setup' : 'Settings & Setup'}
+          </button>
         </div>
+        {showSetup ? (
+          <div className="setup-panel">
+            <h3>Setup Status</h3>
+            <p className="muted">LLM provider: {llmProvider}</p>
+            <p className="muted">Active route: {llmEffectiveProvider}</p>
+            <p className="muted">LLM ready: {llmReady ? 'yes' : 'needs config'}</p>
+            <p className="muted">STT engine: {sttEngine}</p>
+            <p className="muted">TTS engine: {ttsEngine}</p>
+            {runtimeCaps?.llm?.message ? <p className="error">{runtimeCaps.llm.message}</p> : null}
+            {capsError ? <p className="error">{capsError}</p> : null}
+            <div className="row">
+              <button onClick={refreshRuntimeCapabilities} disabled={capsLoading}>
+                {capsLoading ? 'Refreshing...' : 'Refresh Setup'}
+              </button>
+              <button onClick={loadSetupState} disabled={setupLoading}>
+                {setupLoading ? 'Loading...' : 'Load Wizard'}
+              </button>
+            </div>
+            <p className="muted">Setup Wizard step {setupStep}/3</p>
+            <div className="row">
+              <button onClick={() => setSetupStep((current) => Math.max(1, current - 1))} disabled={setupStep <= 1}>
+                Previous
+              </button>
+              <button onClick={() => setSetupStep((current) => Math.min(3, current + 1))} disabled={setupStep >= 3}>
+                Next
+              </button>
+            </div>
+            {setupStep === 1 ? (
+              <div>
+                <label className="muted">LLM provider</label>
+                <select
+                  value={setupDraft.OPENCOMMOTION_LLM_PROVIDER || 'ollama'}
+                  onChange={(e) => updateSetupDraft('OPENCOMMOTION_LLM_PROVIDER', e.target.value)}
+                >
+                  <option value="ollama">ollama</option>
+                  <option value="openai-compatible">openai-compatible</option>
+                  <option value="codex-cli">codex-cli</option>
+                  <option value="openclaw-cli">openclaw-cli</option>
+                  <option value="openclaw-openai">openclaw-openai</option>
+                  <option value="heuristic">heuristic</option>
+                </select>
+                <label className="muted">Model</label>
+                <input
+                  value={setupDraft.OPENCOMMOTION_LLM_MODEL || ''}
+                  onChange={(e) => updateSetupDraft('OPENCOMMOTION_LLM_MODEL', e.target.value)}
+                  placeholder="provider model"
+                />
+              </div>
+            ) : null}
+            {setupStep === 2 ? (
+              <div>
+                <label className="muted">STT engine</label>
+                <select
+                  value={setupDraft.OPENCOMMOTION_STT_ENGINE || 'auto'}
+                  onChange={(e) => updateSetupDraft('OPENCOMMOTION_STT_ENGINE', e.target.value)}
+                >
+                  <option value="auto">auto</option>
+                  <option value="faster-whisper">faster-whisper</option>
+                  <option value="vosk">vosk</option>
+                  <option value="openai-compatible">openai-compatible</option>
+                  <option value="text-fallback">text-fallback</option>
+                </select>
+                <label className="muted">TTS engine</label>
+                <select
+                  value={setupDraft.OPENCOMMOTION_TTS_ENGINE || 'auto'}
+                  onChange={(e) => updateSetupDraft('OPENCOMMOTION_TTS_ENGINE', e.target.value)}
+                >
+                  <option value="auto">auto</option>
+                  <option value="piper">piper</option>
+                  <option value="espeak">espeak</option>
+                  <option value="openai-compatible">openai-compatible</option>
+                  <option value="tone-fallback">tone-fallback</option>
+                </select>
+                <label className="muted">Strict real engines</label>
+                <select
+                  value={setupDraft.OPENCOMMOTION_VOICE_REQUIRE_REAL_ENGINES || 'false'}
+                  onChange={(e) => updateSetupDraft('OPENCOMMOTION_VOICE_REQUIRE_REAL_ENGINES', e.target.value)}
+                >
+                  <option value="false">false</option>
+                  <option value="true">true</option>
+                </select>
+              </div>
+            ) : null}
+            {setupStep === 3 ? (
+              <div>
+                <label className="muted">Auth mode</label>
+                <select
+                  value={setupDraft.OPENCOMMOTION_AUTH_MODE || 'api-key'}
+                  onChange={(e) => updateSetupDraft('OPENCOMMOTION_AUTH_MODE', e.target.value)}
+                >
+                  <option value="api-key">api-key</option>
+                  <option value="network-trust">network-trust</option>
+                </select>
+                <label className="muted">API keys (comma-separated)</label>
+                <input
+                  value={setupDraft.OPENCOMMOTION_API_KEYS || ''}
+                  onChange={(e) => updateSetupDraft('OPENCOMMOTION_API_KEYS', e.target.value)}
+                  placeholder="dev-opencommotion-key"
+                />
+                <label className="muted">Allowed IP/CIDR list</label>
+                <input
+                  value={setupDraft.OPENCOMMOTION_ALLOWED_IPS || ''}
+                  onChange={(e) => updateSetupDraft('OPENCOMMOTION_ALLOWED_IPS', e.target.value)}
+                  placeholder="127.0.0.1/32,::1/128"
+                />
+              </div>
+            ) : null}
+            <div className="row">
+              <button onClick={validateSetupDraft}>Validate Setup</button>
+              <button onClick={saveSetupDraft} disabled={setupSaving}>
+                {setupSaving ? 'Saving...' : 'Save Setup'}
+              </button>
+            </div>
+            {setupMessage ? <p className="muted">{setupMessage}</p> : null}
+            {setupWarnings.map((warning) => (
+              <p className="muted" key={warning}>{warning}</p>
+            ))}
+            {setupErrors.map((error) => (
+              <p className="error" key={error}>{error}</p>
+            ))}
+            <p className="muted">CLI fallback: `python3 scripts/opencommotion.py setup`</p>
+          </div>
+        ) : null}
         <div className="setup-panel">
           <h3>Agent Run Manager</h3>
           <div className="row">

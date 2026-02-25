@@ -131,7 +131,7 @@ def validate_setup(values: dict[str, str]) -> dict[str, Any]:
     errors: list[str] = []
     warnings: list[str] = []
 
-    provider = values.get("OPENCOMMOTION_LLM_PROVIDER", "heuristic").strip().lower()
+    provider = values.get("OPENCOMMOTION_LLM_PROVIDER", "").strip().lower() or "heuristic"
     if provider not in VALID_LLM_PROVIDERS:
         errors.append(f"Unsupported LLM provider: {provider}")
 
@@ -153,7 +153,7 @@ def validate_setup(values: dict[str, str]) -> dict[str, Any]:
         if shutil.which(bin_name) is None:
             warnings.append(f"{bin_name} is not currently on PATH")
 
-    stt = values.get("OPENCOMMOTION_STT_ENGINE", "auto").strip().lower()
+    stt = values.get("OPENCOMMOTION_STT_ENGINE", "").strip().lower() or "auto"
     if stt not in VALID_STT_ENGINES:
         errors.append(f"Unsupported STT engine: {stt}")
     if stt == "openai-compatible":
@@ -166,7 +166,7 @@ def validate_setup(values: dict[str, str]) -> dict[str, Any]:
         if stt_base_url and _voice_api_key_required(stt_base_url) and not stt_api_key:
             errors.append("OPENCOMMOTION_VOICE_OPENAI_API_KEY is required for remote openai-compatible STT")
 
-    tts = values.get("OPENCOMMOTION_TTS_ENGINE", "auto").strip().lower()
+    tts = values.get("OPENCOMMOTION_TTS_ENGINE", "").strip().lower() or "auto"
     if tts not in VALID_TTS_ENGINES:
         errors.append(f"Unsupported TTS engine: {tts}")
     if tts == "openai-compatible":
@@ -179,7 +179,7 @@ def validate_setup(values: dict[str, str]) -> dict[str, Any]:
         if tts_base_url and _voice_api_key_required(tts_base_url) and not tts_api_key:
             errors.append("OPENCOMMOTION_VOICE_OPENAI_API_KEY is required for remote openai-compatible TTS")
 
-    auth_mode = values.get("OPENCOMMOTION_AUTH_MODE", "api-key").strip().lower()
+    auth_mode = values.get("OPENCOMMOTION_AUTH_MODE", "").strip().lower() or "api-key"
     if auth_mode not in VALID_AUTH_MODES:
         errors.append(f"Unsupported auth mode: {auth_mode}")
     if auth_mode == "api-key" and not values.get("OPENCOMMOTION_API_KEYS", "").strip():

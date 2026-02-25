@@ -107,7 +107,10 @@ def _selected_provider() -> str:
 
 
 def _allow_fallback() -> bool:
-    value = os.getenv(LLM_ALLOW_FALLBACK_ENV, "true").strip().lower()
+    raw = os.getenv(LLM_ALLOW_FALLBACK_ENV)
+    if raw is None or not raw.strip():
+        return True
+    value = raw.strip().lower()
     return value in TRUE_VALUES
 
 

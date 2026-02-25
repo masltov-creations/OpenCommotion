@@ -6,6 +6,7 @@ cd "$ROOT"
 
 AUTO_RUN=1
 AUTO_OPEN=1
+AUTO_CLI_SETUP=0
 APP_URL="http://127.0.0.1:8000"
 
 for arg in "$@"; do
@@ -16,15 +17,19 @@ for arg in "$@"; do
     --no-open)
       AUTO_OPEN=0
       ;;
+    --with-cli-setup)
+      AUTO_CLI_SETUP=1
+      ;;
     -h|--help)
-      echo "Usage: ./scripts/setup.sh [--no-run] [--no-open]"
-      echo "  --no-run   complete install + setup wizard, but do not start services"
+      echo "Usage: ./scripts/setup.sh [--no-run] [--no-open] [--with-cli-setup]"
+      echo "  --no-run         complete install only; do not start services"
       echo "  --no-open  do not prompt/open browser after startup"
+      echo "  --with-cli-setup run terminal setup wizard before startup"
       exit 0
       ;;
     *)
       echo "Unknown argument: $arg" >&2
-      echo "Usage: ./scripts/setup.sh [--no-run] [--no-open]" >&2
+      echo "Usage: ./scripts/setup.sh [--no-run] [--no-open] [--with-cli-setup]" >&2
       exit 1
       ;;
   esac
@@ -58,16 +63,18 @@ fi
 
 python3 scripts/opencommotion.py install
 
-if [[ ! -t 0 ]]; then
-  echo "Setup wizard requires an interactive terminal." >&2
-  echo "Run this command in an interactive shell: bash scripts/setup.sh" >&2
-  exit 1
+if [[ "$AUTO_CLI_SETUP" -eq 1 ]]; then
+  if [[ ! -t 0 ]]; then
+    echo "CLI setup wizard requires an interactive terminal." >&2
+    echo "Run this command in an interactive shell: bash scripts/setup.sh --with-cli-setup" >&2
+    exit 1
+  fi
+  python3 scripts/opencommotion.py setup
 fi
-
-python3 scripts/opencommotion.py setup
 
 if [[ "$AUTO_RUN" -eq 1 ]]; then
   python3 scripts/opencommotion.py run
+  echo "Configure providers in the app: Settings & Setup."
   if [[ "$AUTO_OPEN" -eq 1 && -t 0 ]]; then
     read -r -p "Open browser now? [Y/n]: " open_reply
     open_reply="${open_reply:-Y}"
@@ -88,5 +95,8 @@ if [[ "$AUTO_RUN" -eq 1 ]]; then
   fi
 else
   echo "Setup complete."
+  if [[ "$AUTO_CLI_SETUP" -eq 0 ]]; then
+    echo "Configure providers in the app: Settings & Setup."
+  fi
   echo "Run: python3 scripts/opencommotion.py run"
 fi

@@ -77,10 +77,21 @@ fi
 mkdir -p runtime/logs runtime/agent-runs data/artifacts/bundles data/audio
 
 if [ -f .env ]; then
-  set -a
-  # shellcheck disable=SC1091
-  source .env
-  set +a
+  # Load .env values as defaults only. Explicit environment variables win.
+  while IFS= read -r raw || [ -n "$raw" ]; do
+    line="$(printf '%s' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    if [ -z "$line" ] || [[ "$line" == \#* ]] || [[ "$line" != *=* ]]; then
+      continue
+    fi
+    key="$(printf '%s' "${line%%=*}" | sed -e 's/[[:space:]]*$//')"
+    value="${line#*=}"
+    if [ -z "$key" ]; then
+      continue
+    fi
+    if [ -z "${!key+x}" ]; then
+      export "$key=$value"
+    fi
+  done < .env
 fi
 
 if [ ! -x .venv/bin/python ]; then

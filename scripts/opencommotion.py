@@ -87,7 +87,29 @@ def cmd_test_ui() -> int:
 
 
 def cmd_test_e2e() -> int:
-    return _run(["bash", "-lc", "set -euo pipefail; bash scripts/dev_up.sh --ui-mode dev; trap 'bash scripts/dev_down.sh' EXIT; PW_LIB_DIR=\"$(bash scripts/ensure_playwright_libs.sh)\"; for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8000/health >/dev/null && curl -fsS http://127.0.0.1:8001/health >/dev/null && break; sleep 1; done; LD_LIBRARY_PATH=\"$PW_LIB_DIR:${LD_LIBRARY_PATH:-}\" npm run e2e"])
+    return _run(
+        [
+            "bash",
+            "-lc",
+            (
+                "set -euo pipefail; "
+                "export OPENCOMMOTION_LLM_PROVIDER=heuristic; "
+                "export OPENCOMMOTION_LLM_ALLOW_FALLBACK=true; "
+                "export OPENCOMMOTION_STT_ENGINE=auto; "
+                "export OPENCOMMOTION_TTS_ENGINE=tone-fallback; "
+                "export OPENCOMMOTION_VOICE_REQUIRE_REAL_ENGINES=false; "
+                "bash scripts/dev_up.sh --ui-mode dev; "
+                "trap 'bash scripts/dev_down.sh' EXIT; "
+                "PW_LIB_DIR=\"$(bash scripts/ensure_playwright_libs.sh)\"; "
+                "for i in $(seq 1 30); do "
+                "curl -fsS http://127.0.0.1:8000/health >/dev/null && "
+                "curl -fsS http://127.0.0.1:8001/health >/dev/null && break; "
+                "sleep 1; "
+                "done; "
+                "LD_LIBRARY_PATH=\"$PW_LIB_DIR:${LD_LIBRARY_PATH:-}\" npm run e2e"
+            ),
+        ]
+    )
 
 
 def cmd_test_complete() -> int:
