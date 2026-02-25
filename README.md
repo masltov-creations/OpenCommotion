@@ -68,6 +68,7 @@ Fast command aliases (same script, shorter typing):
 opencommotion -setup
 opencommotion -run
 opencommotion -status
+opencommotion -fresh
 opencommotion -stop
 ```
 
@@ -134,6 +135,17 @@ Stop:
 ```bash
 opencommotion down
 ```
+
+Start fresh (clean local reset + reinstall + run):
+
+```bash
+opencommotion fresh
+```
+
+Optional fresh flags via env vars:
+- `OPENCOMMOTION_FRESH_RESET_ENV=1 opencommotion fresh` (also resets `.env`)
+- `OPENCOMMOTION_FRESH_KEEP_BUNDLES=1 opencommotion fresh` (keeps artifact bundles)
+- `OPENCOMMOTION_FRESH_DRY_RUN=1 opencommotion fresh` (preview only)
 
 Update safely (works even if stack is already running):
 

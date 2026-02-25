@@ -17,6 +17,7 @@ COMMANDS = [
     "run",
     "dev",
     "update",
+    "fresh",
     "down",
     "preflight",
     "status",
@@ -34,6 +35,7 @@ COMMAND_FLAG_ALIASES = {
     "-run": "run",
     "-dev": "dev",
     "-update": "update",
+    "-fresh": "fresh",
     "-down": "down",
     "-stop": "down",
     "-preflight": "preflight",
@@ -133,6 +135,71 @@ def cmd_update() -> int:
         return 0
 
     print("Update complete. Stack was not running; start with: opencommotion -run")
+    return 0
+
+
+def _safe_remove(path: Path, dry_run: bool) -> None:
+    try:
+        path.relative_to(ROOT)
+    except ValueError as exc:
+        raise RuntimeError(f"Refusing to remove path outside project root: {path}") from exc
+
+    if not path.exists():
+        return
+    rel = path.relative_to(ROOT)
+    if dry_run:
+        print(f"[dry-run] would remove {rel}")
+        return
+    if path.is_dir():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+    print(f"removed {rel}")
+
+
+def cmd_fresh() -> int:
+    dry_run = os.getenv("OPENCOMMOTION_FRESH_DRY_RUN", "").strip().lower() in {"1", "true", "yes"}
+    reset_env = os.getenv("OPENCOMMOTION_FRESH_RESET_ENV", "").strip().lower() in {"1", "true", "yes"}
+    keep_bundles = os.getenv("OPENCOMMOTION_FRESH_KEEP_BUNDLES", "").strip().lower() in {"1", "true", "yes"}
+
+    if _stack_running():
+        print("Detected running stack. Stopping before fresh reset...")
+        stop_code = cmd_down()
+        if stop_code != 0:
+            return stop_code
+
+    cleanup_paths = [
+        ROOT / ".venv",
+        ROOT / "node_modules",
+        ROOT / "apps" / "ui" / "node_modules",
+        ROOT / "runtime" / "logs",
+        ROOT / "runtime" / "agent-runs",
+        ROOT / "data" / "audio",
+        ROOT / "data" / "artifacts" / "artifacts.db",
+        ROOT / "test-results",
+    ]
+    if not keep_bundles:
+        cleanup_paths.append(ROOT / "data" / "artifacts" / "bundles")
+    if reset_env:
+        cleanup_paths.append(ROOT / ".env")
+
+    print("Running fresh reset...")
+    for path in cleanup_paths:
+        _safe_remove(path, dry_run=dry_run)
+
+    if dry_run:
+        print("[dry-run] fresh reset complete")
+        return 0
+
+    install_code = cmd_install()
+    if install_code != 0:
+        return install_code
+
+    run_code = cmd_run()
+    if run_code != 0:
+        return run_code
+
+    print("Fresh start complete. Open: http://127.0.0.1:8000/?setup=1")
     return 0
 
 
@@ -335,6 +402,8 @@ def main() -> int:
         return cmd_dev()
     if command == "update":
         return cmd_update()
+    if command == "fresh":
+        return cmd_fresh()
     if command == "down":
         return cmd_down()
     if command == "preflight":
