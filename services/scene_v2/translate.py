@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from services.scene_v2.engine import BEHAVIOR_NS, ENTITY_NS, MATERIAL_NS, canonical_id
+from services.scene_v2.engine import BEHAVIOR_NS, ENTITY_NS, MATERIAL_NS, canonical_id, normalize_ops
 
 
 def _existing(scene: dict[str, Any], namespace: str, suggested: str) -> tuple[str, bool]:
