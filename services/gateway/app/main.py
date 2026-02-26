@@ -45,6 +45,9 @@ ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://127.0.0.1:8001")
 AGENT_RUN_DB_PATH = Path(
     os.getenv("OPENCOMMOTION_AGENT_RUN_DB_PATH", str(PROJECT_ROOT / "runtime" / "agent-runs" / "agent_manager.db"))
 )
+ORCHESTRATOR_REQUEST_TIMEOUT_S = float(os.getenv("OPENCOMMOTION_ORCHESTRATOR_TIMEOUT_S", "20"))
+ORCHESTRATOR_REQUEST_MAX_ATTEMPTS = max(1, int(os.getenv("OPENCOMMOTION_ORCHESTRATOR_MAX_ATTEMPTS", "3")))
+ORCHESTRATOR_RETRY_BASE_DELAY_S = max(0.05, float(os.getenv("OPENCOMMOTION_ORCHESTRATOR_RETRY_BASE_DELAY_S", "0.2")))
 
 
 def _truthy(value: str | None) -> bool:
@@ -341,18 +344,42 @@ async def _emit_agent_runtime_event(event_type: str, payload: dict) -> None:
             )
 
 
+async def _post_orchestrator_with_retry(path: str, payload: dict, timeout_s: float | None = None) -> httpx.Response:
+    last_exc: httpx.HTTPError | None = None
+    timeout = timeout_s or ORCHESTRATOR_REQUEST_TIMEOUT_S
+
+    for attempt in range(1, ORCHESTRATOR_REQUEST_MAX_ATTEMPTS + 1):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(
+                    f"{ORCHESTRATOR_URL}{path}",
+                    json=payload,
+                )
+            response.raise_for_status()
+            return response
+        except httpx.HTTPStatusError:
+            raise
+        except httpx.HTTPError as exc:
+            last_exc = exc
+            if attempt >= ORCHESTRATOR_REQUEST_MAX_ATTEMPTS:
+                break
+            await asyncio.sleep(ORCHESTRATOR_RETRY_BASE_DELAY_S * attempt)
+
+    assert last_exc is not None
+    raise last_exc
+
+
 async def _execute_turn(session_id: str, prompt: str, source: str) -> dict:
     if len(prompt) > 4000:
         raise HTTPException(status_code=422, detail={"error": "prompt_too_long", "max_chars": 4000})
 
     started = perf_counter()
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.post(
-                f"{ORCHESTRATOR_URL}/v1/orchestrate",
-                json={"session_id": session_id, "prompt": prompt},
-            )
-        resp.raise_for_status()
+        resp = await _post_orchestrator_with_retry(
+            path="/v1/orchestrate",
+            payload={"session_id": session_id, "prompt": prompt},
+            timeout_s=ORCHESTRATOR_REQUEST_TIMEOUT_S,
+        )
         result = resp.json()
     except httpx.HTTPStatusError as exc:
         details: dict | str
@@ -376,7 +403,12 @@ async def _execute_turn(session_id: str, prompt: str, source: str) -> dict:
         record_provider_error(provider="orchestrator", error_type="unreachable")
         raise HTTPException(
             status_code=502,
-            detail={"error": "orchestrator_unreachable", "message": str(exc)},
+            detail={
+                "error": "orchestrator_unreachable",
+                "message": str(exc),
+                "orchestrator_url": ORCHESTRATOR_URL,
+                "hint": "Check orchestrator health via opencommotion -status",
+            },
         ) from exc
 
     _validate_orchestrator_payload(result)

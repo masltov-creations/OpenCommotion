@@ -41,6 +41,50 @@ def _client_with_inprocess_orchestrator(tmp_path, monkeypatch) -> TestClient:
     return TestClient(gateway_main.app)
 
 
+def test_orchestrate_retries_transient_orchestrator_unreachable(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENCOMMOTION_AUTH_MODE", "api-key")
+    monkeypatch.delenv("OPENCOMMOTION_API_KEYS", raising=False)
+    db_path = tmp_path / "artifacts.db"
+    bundle_root = tmp_path / "bundles"
+    monkeypatch.setattr(
+        gateway_main,
+        "registry",
+        ArtifactRegistry(db_path=str(db_path), bundle_root=str(bundle_root)),
+    )
+
+    original_async_client = gateway_main.httpx.AsyncClient
+    calls = {"post": 0}
+
+    class FlakyAsyncClient:
+        def __init__(self, *args, **kwargs) -> None:
+            timeout = kwargs.get("timeout", 20)
+            self._client = original_async_client(
+                timeout=timeout,
+                transport=gateway_main.httpx.ASGITransport(app=orchestrator_app),
+                base_url="http://127.0.0.1:8001",
+            )
+
+        async def __aenter__(self):
+            await self._client.__aenter__()
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            return await self._client.__aexit__(exc_type, exc_val, exc_tb)
+
+        async def post(self, url, *args, **kwargs):
+            calls["post"] += 1
+            if calls["post"] == 1:
+                request = gateway_main.httpx.Request("POST", url)
+                raise gateway_main.httpx.ConnectError("simulated transient connect failure", request=request)
+            return await self._client.post(url, *args, **kwargs)
+
+    monkeypatch.setattr(gateway_main.httpx, "AsyncClient", FlakyAsyncClient)
+    c = TestClient(gateway_main.app)
+    res = c.post("/v1/orchestrate", json={"session_id": "retry-test", "prompt": "draw a box"})
+    assert res.status_code == 200
+    assert calls["post"] >= 2
+
+
 def test_compile_rejects_invalid_stroke_schema(tmp_path, monkeypatch) -> None:
     c = _client_with_inprocess_orchestrator(tmp_path, monkeypatch)
     res = c.post(
