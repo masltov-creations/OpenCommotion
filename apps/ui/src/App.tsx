@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { buildScene, type Patch, type SceneActor } from './runtime/sceneRuntime'
 
+declare const __OPENCOMMOTION_UI_VERSION__: string
+
 type VoiceSegment = {
   text: string
   start_ms: number
@@ -93,6 +95,7 @@ const wsGateway = gateway.replace(/^http/i, 'ws')
 const gatewayApiKey =
   (import.meta as { env?: Record<string, string> }).env?.VITE_GATEWAY_API_KEY || 'dev-opencommotion-key'
 const isTestMode = (import.meta as { env?: Record<string, string> }).env?.MODE === 'test'
+const uiVersion = __OPENCOMMOTION_UI_VERSION__
 
 function calcDurationMs(turn: TurnResult): number {
   const patchEnd = turn.visual_patches.reduce((max, patch) => {
@@ -120,6 +123,17 @@ function mapPolyline(points: number[][], x: number, y: number, width: number, he
       return `${sx},${sy}`
     })
     .join(' ')
+}
+
+function parseStylePoints(style: Record<string, unknown>): number[][] {
+  const raw = style.points
+  if (!Array.isArray(raw)) {
+    return []
+  }
+  return raw
+    .filter((row): row is number[] => Array.isArray(row) && row.length >= 2)
+    .map((row) => [Number(row[0]), Number(row[1]), Number(row[2] || 0)])
+    .filter((row) => Number.isFinite(row[0]) && Number.isFinite(row[1]))
 }
 
 function describeVoice(voice: VoicePayload | null): string {
@@ -825,7 +839,11 @@ export default function App() {
     [patches, playbackMs],
   )
 
-  const actorEntries = Object.entries(scene.actors)
+  const actorEntries = Object.entries(scene.actors).sort(([, leftActor], [, rightActor]) => {
+    const leftStyle = (leftActor.style || {}) as Record<string, unknown>
+    const rightStyle = (rightActor.style || {}) as Record<string, unknown>
+    return styleNumber(leftStyle, 'z', 0) - styleNumber(rightStyle, 'z', 0)
+  })
   const lineChart = scene.charts.adoption_curve as { points?: number[][]; at_ms?: number; duration_ms?: number } | undefined
   const pieChart = scene.charts.saturation_pie as
     | { slices?: Array<{ label: string; value: number }>; at_ms?: number; duration_ms?: number }
@@ -874,6 +892,7 @@ export default function App() {
             <span className={`badge ${llmReady ? 'ok' : 'warn'}`}>LLM: {llmEffectiveProvider}</span>
             <span className="badge">STT: {sttEngine}</span>
             <span className="badge">TTS: {ttsEngine}</span>
+            <span className="badge">UI: v{uiVersion}</span>
           </div>
           <button className="tools-toggle" onClick={() => setToolsOpen((current) => !current)}>
             {toolsOpen ? 'Close Tools' : 'Tools'}
@@ -1082,6 +1101,7 @@ export default function App() {
               }
 
               if (actor.type === 'box' || actor.type === 'square' || actor.type === 'rectangle') {
+                const pos = actorPathPosition(actor, playbackMs, x, y)
                 const width = styleNumber(actorStyle, 'width', actor.type === 'rectangle' ? 140 : 96)
                 const height = styleNumber(actorStyle, 'height', actor.type === 'rectangle' ? 84 : width)
                 const fill = styleString(actorStyle, 'fill', '#22d3ee')
@@ -1090,8 +1110,8 @@ export default function App() {
                 return (
                   <rect
                     key={id}
-                    x={x - width / 2}
-                    y={y - height / 2}
+                    x={pos.x - width / 2}
+                    y={pos.y - height / 2}
                     width={width}
                     height={height}
                     fill={fill}
@@ -1103,30 +1123,64 @@ export default function App() {
               }
 
               if (actor.type === 'circle' || actor.type === 'dot') {
+                const pos = actorPathPosition(actor, playbackMs, x, y)
                 const fill = styleString(actorStyle, 'fill', '#22d3ee')
                 const stroke = styleString(actorStyle, 'stroke', '#e2e8f0')
                 const lineWidth = styleNumber(actorStyle, 'line_width', 3)
                 const radius = styleNumber(actorStyle, 'radius', actor.type === 'dot' ? 8 : 44)
-                return <circle key={id} cx={x} cy={y} r={radius} fill={fill} stroke={stroke} strokeWidth={lineWidth} />
+                return <circle key={id} cx={pos.x} cy={pos.y} r={radius} fill={fill} stroke={stroke} strokeWidth={lineWidth} />
               }
 
               if (actor.type === 'line') {
+                const pos = actorPathPosition(actor, playbackMs, x, y)
+                const dx = pos.x - x
+                const dy = pos.y - y
                 const x2 = styleNumber(actorStyle, 'x2', x + 180)
                 const y2 = styleNumber(actorStyle, 'y2', y)
                 const stroke = styleString(actorStyle, 'stroke', '#22d3ee')
                 const lineWidth = styleNumber(actorStyle, 'line_width', 4)
-                return <line key={id} x1={x} y1={y} x2={x2} y2={y2} stroke={stroke} strokeWidth={lineWidth} />
+                return <line key={id} x1={x + dx} y1={y + dy} x2={x2 + dx} y2={y2 + dy} stroke={stroke} strokeWidth={lineWidth} />
               }
 
               if (actor.type === 'triangle') {
+                const pos = actorPathPosition(actor, playbackMs, x, y)
                 const size = styleNumber(actorStyle, 'size', 100)
                 const fill = styleString(actorStyle, 'fill', '#22d3ee')
                 const stroke = styleString(actorStyle, 'stroke', '#e2e8f0')
                 const lineWidth = styleNumber(actorStyle, 'line_width', 4)
-                const p1 = `${x},${y - size / 2}`
-                const p2 = `${x - size / 2},${y + size / 2}`
-                const p3 = `${x + size / 2},${y + size / 2}`
+                const p1 = `${pos.x},${pos.y - size / 2}`
+                const p2 = `${pos.x - size / 2},${pos.y + size / 2}`
+                const p3 = `${pos.x + size / 2},${pos.y + size / 2}`
                 return <polygon key={id} points={`${p1} ${p2} ${p3}`} fill={fill} stroke={stroke} strokeWidth={lineWidth} />
+              }
+
+              if (actor.type === 'polyline') {
+                const pos = actorPathPosition(actor, playbackMs, x, y)
+                const dx = pos.x - x
+                const dy = pos.y - y
+                const stroke = styleString(actorStyle, 'stroke', '#22d3ee')
+                const lineWidth = styleNumber(actorStyle, 'line_width', 4)
+                const points = parseStylePoints(actorStyle)
+                if (points.length < 2) {
+                  return null
+                }
+                const polylinePoints = points.map((row) => `${row[0] + dx},${row[1] + dy}`).join(' ')
+                return <polyline key={id} points={polylinePoints} fill="none" stroke={stroke} strokeWidth={lineWidth} />
+              }
+
+              if (actor.type === 'polygon') {
+                const pos = actorPathPosition(actor, playbackMs, x, y)
+                const dx = pos.x - x
+                const dy = pos.y - y
+                const fill = styleString(actorStyle, 'fill', '#22d3ee')
+                const stroke = styleString(actorStyle, 'stroke', '#e2e8f0')
+                const lineWidth = styleNumber(actorStyle, 'line_width', 2)
+                const points = parseStylePoints(actorStyle)
+                if (points.length < 3) {
+                  return null
+                }
+                const polygonPoints = points.map((row) => `${row[0] + dx},${row[1] + dy}`).join(' ')
+                return <polygon key={id} points={polygonPoints} fill={fill} stroke={stroke} strokeWidth={lineWidth} />
               }
 
               return null

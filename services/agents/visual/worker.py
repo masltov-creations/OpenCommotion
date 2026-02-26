@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import random
 import re
 
 COLOR_MAP = {
@@ -29,6 +31,25 @@ SHAPE_ALIASES = {
     "dot": "dot",
     "line": "line",
     "triangle": "triangle",
+}
+NOUN_STOP_WORDS = {
+    "a",
+    "an",
+    "the",
+    "draw",
+    "sketch",
+    "paint",
+    "render",
+    "illustrate",
+    "show",
+    "create",
+    "with",
+    "and",
+    "in",
+    "on",
+    "to",
+    "for",
+    "of",
 }
 
 
@@ -196,6 +217,16 @@ def _wants_fish_scene(prompt: str) -> bool:
     return _has_word(prompt, "fish") and (_has_word(prompt, "bowl") or _has_word(prompt, "aquarium"))
 
 
+def _wants_fish_actor_scene(prompt: str) -> bool:
+    if not _has_word(prompt, "fish"):
+        return False
+    if _wants_fish_scene(prompt):
+        return False
+    if any(k in prompt for k in ("chart", "graph", "market growth", "segmented attach")):
+        return False
+    return _draw_intent(prompt) or "swim" in prompt or "swimming" in prompt
+
+
 def _render_mode(prompt: str) -> str:
     if "3d" in prompt or "three-dimensional" in prompt or "refraction" in prompt or "volumetric" in prompt:
         return "3d"
@@ -222,11 +253,227 @@ def _wants_cow_moon_lyric_scene(prompt: str) -> bool:
     return has_cow_moon and has_lyric_intent
 
 
+def _extract_subject_noun(prompt: str) -> str:
+    tokens = re.findall(r"[a-z]+", prompt)
+    for token in tokens:
+        if token not in NOUN_STOP_WORDS:
+            return token
+    return "shape"
+
+
+def _extract_xyz_points(prompt: str) -> tuple[list[list[float]], bool]:
+    matches = re.findall(
+        r"(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)(?:\s*,\s*(-?\d+(?:\.\d+)?))?",
+        prompt,
+    )
+    points: list[list[float]] = []
+    for x_raw, y_raw, z_raw in matches:
+        try:
+            x = float(x_raw)
+            y = float(y_raw)
+            z = float(z_raw) if z_raw else 0.0
+        except ValueError:
+            continue
+        points.append([round(x, 4), round(y, 4), round(z, 4)])
+    if len(points) < 2:
+        return [], False
+    relative = all(0.0 <= row[0] <= 1.0 and 0.0 <= row[1] <= 1.0 for row in points)
+    return points, relative
+
+
+def _seeded_polyline(prompt: str) -> list[list[float]]:
+    seed = int(hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:8], 16)
+    rng = random.Random(seed)
+    points: list[list[float]] = []
+    x = 0.14 + rng.random() * 0.12
+    for _ in range(6):
+        y = 0.24 + rng.random() * 0.52
+        points.append([round(x, 4), round(y, 4), 0.0])
+        x += 0.11 + rng.random() * 0.1
+        x = min(0.9, x)
+    return points
+
+
+def _palette_fish_commands(color_hex: str) -> list[dict]:
+    return [
+        {
+            "op": "polygon",
+            "id": "fish_body_script",
+            "relative": True,
+            "points": [
+                [0.36, 0.54, 0.1],
+                [0.48, 0.46, 0.12],
+                [0.61, 0.52, 0.11],
+                [0.49, 0.6, 0.1],
+            ],
+            "fill": color_hex,
+            "stroke": "#e2e8f0",
+            "line_width": 2,
+        },
+        {
+            "op": "polygon",
+            "id": "fish_tail_script",
+            "relative": True,
+            "points": [
+                [0.35, 0.54, 0.1],
+                [0.27, 0.48, 0.08],
+                [0.27, 0.6, 0.08],
+            ],
+            "fill": color_hex,
+            "stroke": "#e2e8f0",
+            "line_width": 2,
+        },
+        {
+            "op": "dot",
+            "id": "fish_eye_script",
+            "relative": True,
+            "point": [0.55, 0.52, 0.13],
+            "radius": 3,
+            "color": "#111827",
+            "stroke": "#111827",
+            "line_width": 1,
+        },
+        {
+            "op": "move",
+            "target_id": "fish_body_script",
+            "relative": True,
+            "duration_ms": 3200,
+            "loop": True,
+            "path_points": [[0.31, 0.55, 0.12], [0.48, 0.44, 0.14], [0.64, 0.55, 0.12], [0.44, 0.63, 0.1], [0.31, 0.55, 0.12]],
+        },
+        {
+            "op": "move",
+            "target_id": "fish_tail_script",
+            "relative": True,
+            "duration_ms": 3200,
+            "loop": True,
+            "path_points": [[0.3, 0.55, 0.08], [0.47, 0.44, 0.1], [0.63, 0.55, 0.08], [0.43, 0.63, 0.06], [0.3, 0.55, 0.08]],
+        },
+    ]
+
+
+def _build_palette_script_strokes(prompt: str, mode: str) -> list[dict]:
+    color_name, color_hex = _extract_color(prompt)
+    subject = _extract_subject_noun(prompt)
+    points, relative = _extract_xyz_points(prompt)
+    line_width = max(2, int(_size_hint(prompt, fallback=96) * 0.045))
+    commands: list[dict] = []
+
+    if points:
+        commands.append(
+            {
+                "op": "polyline",
+                "id": f"{subject}_polyline",
+                "relative": relative,
+                "points": points,
+                "color": color_hex,
+                "line_width": line_width,
+            }
+        )
+        if len(points) >= 3 and any(word in prompt for word in ("fill", "closed", "polygon")):
+            commands.append(
+                {
+                    "op": "polygon",
+                    "id": f"{subject}_polygon",
+                    "relative": relative,
+                    "points": points,
+                    "fill": color_hex,
+                    "stroke": "#e2e8f0",
+                    "line_width": max(1, line_width - 1),
+                }
+            )
+        if any(word in prompt for word in ("move", "animate", "motion", "swim", "orbit", "bounce")):
+            commands.append(
+                {
+                    "op": "move",
+                    "target_id": f"{subject}_polyline",
+                    "relative": relative,
+                    "duration_ms": 3200,
+                    "loop": True,
+                    "path_points": points,
+                }
+            )
+    elif subject == "fish":
+        commands.extend(_palette_fish_commands(color_hex=color_hex))
+    else:
+        fallback_points = _seeded_polyline(prompt)
+        commands.extend(
+            [
+                {
+                    "op": "polyline",
+                    "id": f"{subject}_sketch",
+                    "relative": True,
+                    "points": fallback_points,
+                    "color": color_hex,
+                    "line_width": line_width,
+                },
+                {
+                    "op": "dot",
+                    "id": f"{subject}_anchor",
+                    "relative": True,
+                    "point": fallback_points[0],
+                    "radius": max(3, int(line_width * 0.9)),
+                    "color": color_hex,
+                    "stroke": "#e2e8f0",
+                    "line_width": 1,
+                },
+            ]
+        )
+        if any(word in prompt for word in ("move", "animate", "motion", "orbit", "bounce")):
+            commands.append(
+                {
+                    "op": "move",
+                    "target_id": f"{subject}_sketch",
+                    "relative": True,
+                    "duration_ms": 3200,
+                    "loop": True,
+                    "path_points": fallback_points,
+                }
+            )
+
+    if not commands:
+        return []
+
+    subject_label = subject if subject != "shape" else "scene"
+    return [
+        {
+            "stroke_id": "render-mode-palette-script",
+            "kind": "setRenderMode",
+            "params": {"mode": mode},
+            "timing": {"start_ms": 0, "duration_ms": 80, "easing": "linear"},
+        },
+        {
+            "stroke_id": f"palette-script-{subject_label}",
+            "kind": "runScreenScript",
+            "params": {"program": {"commands": commands}},
+            "timing": {"start_ms": 40, "duration_ms": 3600, "easing": "linear"},
+        },
+        {
+            "stroke_id": "palette-script-note",
+            "kind": "annotateInsight",
+            "params": {
+                "text": f"Tool routing: no prefab for '{subject_label}', using palette script with point/motion commands."
+            },
+            "timing": {"start_ms": 120, "duration_ms": 200, "easing": "linear"},
+        },
+        {
+            "stroke_id": "palette-script-tool-note",
+            "kind": "annotateInsight",
+            "params": {
+                "text": f"Palette color: {color_name if color_name != 'default' else color_hex}.",
+            },
+            "timing": {"start_ms": 150, "duration_ms": 180, "easing": "linear"},
+        },
+    ]
+
+
 def generate_visual_strokes(prompt: str) -> list[dict]:
     p = prompt.lower()
     market_growth_scene = _wants_market_growth_scene(p)
     day_night_scene = _wants_day_night_scene(p)
     cow_moon_lyric_scene = _wants_cow_moon_lyric_scene(p)
+    fish_scene = _wants_fish_scene(p)
+    fish_actor_scene = _wants_fish_actor_scene(p)
     mode = _render_mode(p)
     strokes: list[dict] = []
 
@@ -417,7 +664,7 @@ def generate_visual_strokes(prompt: str) -> list[dict]:
             ]
         )
 
-    if _wants_fish_scene(p):
+    if fish_scene:
         bowl_shape = "square" if any(term in p for term in ("square", "box", "cube", "rectangular")) else "round"
         color_name, fish_color = _extract_color(p, default="#f59e0b")
         strokes.extend(
@@ -555,34 +802,52 @@ def generate_visual_strokes(prompt: str) -> list[dict]:
                 ]
             )
 
+    if fish_actor_scene:
+        color_name, fish_color = _extract_color(p, default="#f59e0b")
+        strokes.extend(
+            [
+                {
+                    "stroke_id": "render-mode-fish",
+                    "kind": "setRenderMode",
+                    "params": {"mode": mode},
+                    "timing": {"start_ms": 0, "duration_ms": 100, "easing": "linear"},
+                },
+                {
+                    "stroke_id": "spawn-fish-only",
+                    "kind": "spawnSceneActor",
+                    "params": {
+                        "actor_id": "fish_1",
+                        "actor_type": "fish",
+                        "x": 300,
+                        "y": 205,
+                        "style": {"species": "fish", "palette": color_name, "fill": fish_color},
+                    },
+                    "timing": {"start_ms": 80, "duration_ms": 220, "easing": "easeOutCubic"},
+                },
+                {
+                    "stroke_id": "fish-only-swim",
+                    "kind": "setActorMotion",
+                    "params": {
+                        "actor_id": "fish_1",
+                        "motion": {
+                            "name": "swim-cycle",
+                            "loop": True,
+                            "path_points": [[230, 210], [300, 178], [372, 206], [304, 236], [230, 210]],
+                            "seed": 17,
+                        },
+                    },
+                    "timing": {"start_ms": 220, "duration_ms": 3600, "easing": "easeInOutSine"},
+                },
+            ]
+        )
+
     if not strokes:
         shape_strokes = _build_shape_strokes(p, mode)
         if shape_strokes:
             strokes.extend(shape_strokes)
 
     if not strokes and _draw_intent(p):
-        strokes.extend(
-            [
-                {
-                    "stroke_id": "render-mode-default-draw",
-                    "kind": "setRenderMode",
-                    "params": {"mode": mode},
-                    "timing": {"start_ms": 0, "duration_ms": 80, "easing": "linear"},
-                },
-                {
-                    "stroke_id": "fallback-dot",
-                    "kind": "spawnSceneActor",
-                    "params": {
-                        "actor_id": "dot_1",
-                        "actor_type": "dot",
-                        "x": 250,
-                        "y": 190,
-                        "style": {"fill": "#22d3ee", "radius": 8},
-                    },
-                    "timing": {"start_ms": 50, "duration_ms": 180, "easing": "easeOutCubic"},
-                },
-            ]
-        )
+        strokes.extend(_build_palette_script_strokes(prompt=p, mode=mode))
 
     if strokes:
         strokes.append(

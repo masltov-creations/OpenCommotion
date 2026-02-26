@@ -9,6 +9,9 @@ from services.agents.visual.fish_scene import (
     validate_shader_uniforms,
 )
 
+STAGE_WIDTH = 720.0
+STAGE_HEIGHT = 360.0
+
 
 def _coerce_curve_points(raw_points: Any, fallback: list[list[float]], trend: str) -> list[list[float]]:
     points: list[list[float]] = []
@@ -107,6 +110,206 @@ def _coerce_lyrics_words(raw_words: Any) -> list[str]:
     if not words:
         words = ["The", "cow", "jumps", "over", "the", "moon"]
     return words[:24]
+
+
+def _float(value: Any, fallback: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _int(value: Any, fallback: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _coerce_script_point(raw: Any, *, relative: bool) -> list[float] | None:
+    if not isinstance(raw, (list, tuple)) or len(raw) < 2:
+        return None
+    x = _float(raw[0], 0.0)
+    y = _float(raw[1], 0.0)
+    z = _float(raw[2], 0.0) if len(raw) >= 3 else 0.0
+    if relative:
+        x = max(0.0, min(1.0, x)) * STAGE_WIDTH
+        y = max(0.0, min(1.0, y)) * STAGE_HEIGHT
+    return [round(x, 3), round(y, 3), round(z, 3)]
+
+
+def _coerce_script_points(raw_points: Any, *, relative: bool) -> list[list[float]]:
+    points: list[list[float]] = []
+    if not isinstance(raw_points, list):
+        return points
+    for row in raw_points:
+        point = _coerce_script_point(row, relative=relative)
+        if point is not None:
+            points.append(point)
+    return points
+
+
+def _compile_screen_script(params: dict[str, Any], start_ms: int) -> list[dict[str, Any]]:
+    program = params.get("program", {})
+    commands = program.get("commands", []) if isinstance(program, dict) else []
+    if not isinstance(commands, list):
+        return []
+
+    patches: list[dict[str, Any]] = []
+    for idx, command in enumerate(commands):
+        if not isinstance(command, dict):
+            continue
+        op = str(command.get("op", "")).strip().lower()
+        if not op:
+            continue
+        relative = bool(command.get("relative", False))
+        command_at_ms = start_ms + max(0, _int(command.get("at_ms", idx * 90), idx * 90))
+        actor_id = str(command.get("id", command.get("actor_id", f"script_actor_{idx}")))
+
+        if op in {"dot", "circle"}:
+            point = _coerce_script_point(
+                command.get("point", [command.get("x", 180), command.get("y", 180), command.get("z", 0)]),
+                relative=relative,
+            )
+            if point is None:
+                continue
+            style = {
+                "fill": str(command.get("color", command.get("fill", "#22d3ee"))),
+                "stroke": str(command.get("stroke", "#e2e8f0")),
+                "line_width": max(1, _int(command.get("line_width", 2), 2)),
+                "radius": max(1, _int(command.get("radius", 8 if op == "dot" else 42), 8 if op == "dot" else 42)),
+                "z": point[2],
+            }
+            patches.append(
+                {
+                    "op": "add",
+                    "path": f"/actors/{actor_id}",
+                    "value": {
+                        "type": "dot" if op == "dot" else "circle",
+                        "x": point[0],
+                        "y": point[1],
+                        "style": style,
+                    },
+                    "at_ms": command_at_ms,
+                }
+            )
+            continue
+
+        if op == "line":
+            points = _coerce_script_points(
+                command.get("points", [[command.get("x1", 120), command.get("y1", 180)], [command.get("x2", 280), command.get("y2", 180)]]),
+                relative=relative,
+            )
+            if len(points) < 2:
+                continue
+            p1 = points[0]
+            p2 = points[1]
+            style = {
+                "stroke": str(command.get("color", command.get("stroke", "#22d3ee"))),
+                "line_width": max(1, _int(command.get("line_width", 4), 4)),
+                "x2": p2[0],
+                "y2": p2[1],
+                "z": round((p1[2] + p2[2]) / 2.0, 3),
+            }
+            patches.append(
+                {
+                    "op": "add",
+                    "path": f"/actors/{actor_id}",
+                    "value": {"type": "line", "x": p1[0], "y": p1[1], "style": style},
+                    "at_ms": command_at_ms,
+                }
+            )
+            continue
+
+        if op in {"polyline", "path"}:
+            points = _coerce_script_points(command.get("points"), relative=relative)
+            if len(points) < 2:
+                continue
+            z_avg = round(sum(row[2] for row in points) / float(len(points)), 3)
+            style = {
+                "stroke": str(command.get("color", command.get("stroke", "#22d3ee"))),
+                "line_width": max(1, _int(command.get("line_width", 4), 4)),
+                "points": points,
+                "z": z_avg,
+            }
+            patches.append(
+                {
+                    "op": "add",
+                    "path": f"/actors/{actor_id}",
+                    "value": {"type": "polyline", "x": points[0][0], "y": points[0][1], "style": style},
+                    "at_ms": command_at_ms,
+                }
+            )
+            continue
+
+        if op in {"polygon", "fillpolygon"}:
+            points = _coerce_script_points(command.get("points"), relative=relative)
+            if len(points) < 3:
+                continue
+            z_avg = round(sum(row[2] for row in points) / float(len(points)), 3)
+            style = {
+                "fill": str(command.get("fill", command.get("color", "#22d3ee"))),
+                "stroke": str(command.get("stroke", "#e2e8f0")),
+                "line_width": max(1, _int(command.get("line_width", 2), 2)),
+                "points": points,
+                "z": z_avg,
+            }
+            patches.append(
+                {
+                    "op": "add",
+                    "path": f"/actors/{actor_id}",
+                    "value": {"type": "polygon", "x": points[0][0], "y": points[0][1], "style": style},
+                    "at_ms": command_at_ms,
+                }
+            )
+            continue
+
+        if op in {"move", "motion"}:
+            target_id = str(command.get("target_id", command.get("id", ""))).strip()
+            if not target_id:
+                continue
+            path_points = _coerce_script_points(command.get("path_points"), relative=relative)
+            if len(path_points) < 2:
+                continue
+            patches.append(
+                {
+                    "op": "replace",
+                    "path": f"/actors/{target_id}/motion",
+                    "value": {
+                        "name": str(command.get("name", "script-path")),
+                        "loop": bool(command.get("loop", True)),
+                        "duration_ms": max(200, _int(command.get("duration_ms", 3200), 3200)),
+                        "path_points": [[row[0], row[1]] for row in path_points],
+                        "path_points_3d": path_points,
+                    },
+                    "at_ms": command_at_ms,
+                }
+            )
+            continue
+
+        if op == "annotate":
+            text = str(command.get("text", "")).strip()
+            if text:
+                patches.append(
+                    {
+                        "op": "add",
+                        "path": "/annotations/-",
+                        "value": {"text": text, "style": "callout"},
+                        "at_ms": command_at_ms,
+                    }
+                )
+            continue
+
+        patches.append(
+            {
+                "op": "add",
+                "path": "/annotations/-",
+                "value": {"text": f"Unsupported script op: {op}", "style": "warning"},
+                "at_ms": command_at_ms,
+            }
+        )
+
+    return patches
 
 
 def compile_brush_batch(strokes: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -316,6 +519,12 @@ def compile_brush_batch(strokes: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "at_ms": start_ms,
                 }
             )
+            continue
+
+        if kind == "runScreenScript":
+            params = stroke.get("params", {})
+            if isinstance(params, dict):
+                patches.extend(_compile_screen_script(params=params, start_ms=start_ms))
             continue
 
         if kind == "spawnSceneActor":

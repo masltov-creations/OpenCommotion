@@ -62,3 +62,29 @@ def test_black_fish_square_bowl_prompt_uses_prompt_style() -> None:
     fish = next(row for row in spawned if row.get("params", {}).get("actor_id") == "goldfish")
     assert bowl["params"]["style"]["shape"] == "square"
     assert fish["params"]["style"]["fill"] == "#111827"
+
+
+def test_draw_fish_prompt_generates_fish_actor_and_not_dot_fallback() -> None:
+    strokes = generate_visual_strokes("draw a fish")
+    spawned = [row for row in strokes if row["kind"] == "spawnSceneActor"]
+    assert any(row.get("params", {}).get("actor_type") == "fish" for row in spawned)
+    assert all(row.get("params", {}).get("actor_type") != "dot" for row in spawned)
+
+
+def test_draw_unknown_prompt_routes_to_palette_script_tool() -> None:
+    strokes = generate_visual_strokes("draw a rocket with motion")
+    kinds = [row["kind"] for row in strokes]
+    assert "runScreenScript" in kinds
+    script = next(row for row in strokes if row["kind"] == "runScreenScript")
+    commands = script["params"]["program"]["commands"]
+    assert any(cmd.get("op") in {"polyline", "polygon", "dot"} for cmd in commands)
+    assert any(cmd.get("op") == "move" for cmd in commands)
+
+
+def test_draw_prompt_with_relative_xyz_points_uses_script_points() -> None:
+    strokes = generate_visual_strokes("draw shape points 0.2,0.3,0.1 0.6,0.3,0.2 0.8,0.7,0.3 and animate")
+    script = next(row for row in strokes if row["kind"] == "runScreenScript")
+    commands = script["params"]["program"]["commands"]
+    polyline = next(cmd for cmd in commands if cmd.get("op") == "polyline")
+    assert polyline["relative"] is True
+    assert len(polyline["points"]) == 3

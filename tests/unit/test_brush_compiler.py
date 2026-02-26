@@ -147,3 +147,44 @@ def test_compile_lyrics_track_generates_words_path() -> None:
     lyric_patch = next(p for p in patches if p["path"] == "/lyrics/words")
     assert lyric_patch["value"]["items"][0]["text"] == "The"
     assert lyric_patch["value"]["items"][1]["at_ms"] == 550
+
+
+def test_compile_run_screen_script_generates_primitives_and_motion() -> None:
+    patches = compile_brush_batch(
+        [
+            {
+                "stroke_id": "script",
+                "kind": "runScreenScript",
+                "params": {
+                    "program": {
+                        "commands": [
+                            {
+                                "op": "polygon",
+                                "id": "shape_1",
+                                "relative": True,
+                                "points": [[0.2, 0.2, 0.1], [0.5, 0.2, 0.2], [0.4, 0.5, 0.3]],
+                                "fill": "#22d3ee",
+                            },
+                            {
+                                "op": "move",
+                                "target_id": "shape_1",
+                                "relative": True,
+                                "duration_ms": 2800,
+                                "loop": True,
+                                "path_points": [[0.2, 0.2, 0.1], [0.4, 0.35, 0.2], [0.2, 0.2, 0.1]],
+                            },
+                        ]
+                    }
+                },
+                "timing": {"start_ms": 100, "duration_ms": 3200, "easing": "linear"},
+            }
+        ]
+    )
+    polygon_patch = next(p for p in patches if p["path"] == "/actors/shape_1")
+    assert polygon_patch["value"]["type"] == "polygon"
+    points = polygon_patch["value"]["style"]["points"]
+    assert points[0][0] == 144.0  # 0.2 * 720
+    assert points[0][1] == 72.0   # 0.2 * 360
+    motion_patch = next(p for p in patches if p["path"] == "/actors/shape_1/motion")
+    assert motion_patch["value"]["loop"] is True
+    assert len(motion_patch["value"]["path_points"]) == 3

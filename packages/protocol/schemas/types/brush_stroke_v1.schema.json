@@ -26,7 +26,8 @@
         "emitFx",
         "setEnvironmentMood",
         "setCameraMove",
-        "applyMaterialFx"
+        "applyMaterialFx",
+        "runScreenScript"
       ]
     },
     "params": { "type": "object" },
