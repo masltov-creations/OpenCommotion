@@ -468,7 +468,14 @@ def cmd_test_ui() -> int:
 
 
 def cmd_test_e2e() -> int:
-    return _run(
+    was_running = _stack_running()
+    if was_running:
+        print("Detected running stack. Temporarily stopping it for browser E2E.")
+        stop_code = cmd_down()
+        if stop_code != 0:
+            return stop_code
+
+    code = _run(
         [
             "bash",
             "-lc",
@@ -491,6 +498,13 @@ def cmd_test_e2e() -> int:
             ),
         ]
     )
+
+    if was_running:
+        print("Restoring stack after browser E2E...")
+        restart_code = cmd_run()
+        if restart_code != 0 and code == 0:
+            return restart_code
+    return code
 
 
 def cmd_test_complete() -> int:

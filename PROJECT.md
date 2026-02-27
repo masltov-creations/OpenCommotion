@@ -29,6 +29,8 @@ Active tasks:
    - reran `python3 scripts/opencommotion.py fresh-agent-e2e`
    - confirmed both gates pass in this environment
    - refreshed this file to interruption-safe checkpoint format
+   - fixed `test-e2e`/`test-complete` port-conflict behavior by making browser E2E auto-stop a running stack and restore it afterward
+   - validated with `python3 scripts/opencommotion.py test-e2e` (pass)
  - in progress / not finished:
    - none for current stream
  - remaining:
@@ -39,3 +41,4 @@ Change log:
 - 2026-02-26: Completed verification stream rerun with passing `test-complete` and `fresh-agent-e2e`.
 - 2026-02-26: Closed runtime update/pull conflict class by routing runtime UI build output to `runtime/ui-dist` and preserving fallback to bundled dist.
 - 2026-02-26: Re-synchronized `PROJECT.md` with required interruption-safe tracking format (`planned`, `done in this session`, `in progress / not finished`, `remaining`).
+- 2026-02-26: Updated CLI E2E flow to auto-handle active stack state (temporary stop + automatic restore) so `test-complete` no longer fails due to port 8000 conflicts when a stack is already running.

@@ -210,6 +210,12 @@ opencommotion update
 4. reinstall/update dependencies
 5. restart automatically only if it was running before
 
+`opencommotion test-e2e` and `opencommotion test-complete` now do the same for browser E2E:
+1. detect if the stack is running
+2. stop it temporarily
+3. run Playwright E2E flow
+4. restore your stack automatically if it was running before
+
 ## Connect Your Agents (Python-first)
 
 Robust default client:
