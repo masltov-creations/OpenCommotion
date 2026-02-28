@@ -39,10 +39,6 @@ PowerShell (calls into WSL):
 wsl bash -lc 'mkdir -p ~/apps && if [ -d ~/apps/opencommotion/.git ]; then git -C ~/apps/opencommotion restore --worktree --staged apps/ui/dist/index.html || true; git -C ~/apps/opencommotion clean -fd apps/ui/dist/assets || true; git -C ~/apps/opencommotion pull --ff-only origin main; else git clone https://github.com/masltov-creations/OpenCommotion ~/apps/opencommotion; fi && cd ~/apps/opencommotion && bash scripts/setup.sh'
 ```
 
-Important shell rule:
-- If your prompt looks like `<username>@...$`, you are already in WSL. Run Linux commands directly and do not prefix with `wsl`.
-- Only use `wsl bash -lc '...'` from Windows PowerShell/CMD.
-
 That command installs dependencies, starts the app, and opens the browser (or asks first in interactive shells).
 If browser auto-open is blocked by your environment, open manually:
 - http://127.0.0.1:8000
