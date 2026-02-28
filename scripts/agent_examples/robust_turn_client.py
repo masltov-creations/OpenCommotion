@@ -5,11 +5,57 @@ import argparse
 import asyncio
 import json
 import os
+import re
 from dataclasses import dataclass
 from urllib.parse import urlencode
 
 import httpx
 import websockets
+
+
+PROMPT_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "as",
+    "at",
+    "by",
+    "end",
+    "for",
+    "fresh",
+    "from",
+    "in",
+    "into",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+    "turn",
+    "verification",
+    "with",
+}
+
+
+def _prompt_alignment(prompt: str, text: str) -> dict:
+    prompt_tokens = [
+        token
+        for token in re.findall(r"[a-z0-9]+", prompt.lower())
+        if len(token) >= 4 and token not in PROMPT_STOPWORDS
+    ]
+    unique_tokens = sorted(set(prompt_tokens))
+    text_lower = text.lower()
+    matched = [token for token in unique_tokens if token in text_lower]
+    missing = [token for token in unique_tokens if token not in text_lower]
+    coverage = (len(matched) / len(unique_tokens)) if unique_tokens else 1.0
+    return {
+        "tokens": unique_tokens,
+        "matched_tokens": matched,
+        "missing_tokens": missing,
+        "coverage": round(coverage, 3),
+    }
 
 
 @dataclass
@@ -179,14 +225,28 @@ async def run(config: ClientConfig) -> None:
 
     voice_segments = payload.get("voice", {}).get("segments", [])
     voice_uri = voice_segments[0].get("audio_uri", "") if voice_segments else ""
+    patch_ops = payload.get("patches", []) or payload.get("legacy_visual_patches", []) or payload.get("visual_patches", [])
+    patch_paths = [str(op.get("path", "")) for op in patch_ops if isinstance(op, dict)]
+    has_chart_patch = any(path.startswith("/charts/") for path in patch_paths)
+    has_actor_patch = any(path.startswith("/actors/") for path in patch_paths)
+    text_value = str(payload.get("text", ""))
+    text_lower = text_value.lower()
+    alignment = _prompt_alignment(config.prompt, text_value)
+
     summary = {
         "source": source,
+        "prompt": config.prompt,
         "session_id": payload.get("session_id", config.session_id),
         "turn_id": payload.get("turn_id", ""),
-        "patch_count": len(payload.get("patches", []) or payload.get("legacy_visual_patches", []) or payload.get("visual_patches", [])),
-        "text": payload.get("text", ""),
+        "patch_count": len(patch_ops),
+        "text": text_value,
         "voice_uri": voice_uri,
         "search_results_count": len(search_results),
+        "has_chart_patch": has_chart_patch,
+        "has_actor_patch": has_actor_patch,
+        "mentions_moonwalk": "moonwalk" in text_lower,
+        "mentions_chart_like": any(term in text_lower for term in ("chart", "graph", "plot", "pie", "bar", "line")),
+        "alignment": alignment,
     }
 
     print(json.dumps(summary, indent=2))

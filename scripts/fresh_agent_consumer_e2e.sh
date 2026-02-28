@@ -68,6 +68,21 @@ assert payload.get("patch_count", 0) > 0, "patch_count must be > 0"
 assert payload.get("text"), "missing text"
 assert payload.get("voice_uri"), "missing voice_uri"
 
+alignment = payload.get("alignment") or {}
+coverage = float(alignment.get("coverage", 0.0) or 0.0)
+matched_tokens = alignment.get("matched_tokens") or []
+
+mentions_moonwalk = bool(payload.get("mentions_moonwalk"))
+mentions_chart_like = bool(payload.get("mentions_chart_like"))
+has_chart_patch = bool(payload.get("has_chart_patch"))
+
+assert mentions_moonwalk, "turn text should mention 'moonwalk' to confirm prompt grounding"
+assert mentions_chart_like or has_chart_patch, "chart intent missing: expected chart-like wording or /charts patch"
+assert coverage >= 0.15, (
+  "prompt/text alignment coverage too low "
+  f"(coverage={coverage:.3f}, matched_tokens={matched_tokens})"
+)
+
 print(
     json.dumps(
         {
@@ -76,6 +91,10 @@ print(
             "turn_id": payload.get("turn_id"),
             "patch_count": payload.get("patch_count"),
             "voice_uri": payload.get("voice_uri"),
+      "mentions_moonwalk": mentions_moonwalk,
+      "mentions_chart_like": mentions_chart_like,
+      "has_chart_patch": has_chart_patch,
+      "alignment_coverage": coverage,
         },
         indent=2,
     )
