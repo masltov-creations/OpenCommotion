@@ -18,139 +18,67 @@ If Python and a storyboard had a very productive meeting, this would be the outp
 
 ![OpenCommotion UI](docs/assets/opencommotion-ui.png)
 
-## Quickstart (And Now For Something Completely Practical)
+## Quickstart
 
-Prereqs:
-- Python 3.11+
-- Node.js 20+
-- npm
+Prerequisites: Python 3.11+, Node.js 20+, npm.
 
-One-line bootstrap (clone/update + setup):
+### Install
 
-Linux/macOS/Git Bash/WSL shell:
+Linux / macOS / Git Bash / WSL shell:
 
 ```bash
-mkdir -p /home/$USER/apps && if [ -d /home/$USER/apps/opencommotion/.git ]; then git -C /home/$USER/apps/opencommotion restore --worktree --staged apps/ui/dist/index.html || true; git -C /home/$USER/apps/opencommotion clean -fd apps/ui/dist/assets || true; git -C /home/$USER/apps/opencommotion pull --ff-only origin main; else git clone https://github.com/masltov-creations/OpenCommotion /home/$USER/apps/opencommotion; fi && cd /home/$USER/apps/opencommotion && bash scripts/setup.sh
+git clone https://github.com/masltov-creations/OpenCommotion ~/apps/opencommotion
+cd ~/apps/opencommotion
+bash scripts/setup.sh
 ```
 
-PowerShell (calls into WSL):
+Windows PowerShell (runs inside WSL):
 
 ```powershell
-wsl bash -lc 'mkdir -p ~/apps && if [ -d ~/apps/opencommotion/.git ]; then git -C ~/apps/opencommotion restore --worktree --staged apps/ui/dist/index.html || true; git -C ~/apps/opencommotion clean -fd apps/ui/dist/assets || true; git -C ~/apps/opencommotion pull --ff-only origin main; else git clone https://github.com/masltov-creations/OpenCommotion ~/apps/opencommotion; fi && cd ~/apps/opencommotion && bash scripts/setup.sh'
+wsl bash -lc 'git clone https://github.com/masltov-creations/OpenCommotion ~/apps/opencommotion && cd ~/apps/opencommotion && bash scripts/setup.sh'
 ```
 
-Important shell rule:
-- If your prompt looks like `<username>@...$`, you are already in WSL. Run Linux commands directly and do not prefix with `wsl`.
-- Only use `wsl bash -lc '...'` from Windows PowerShell/CMD.
+> If your shell prompt already looks like `user@host:~$` you are in WSL — run the Linux commands directly, do not wrap with `wsl`.
 
-That command installs dependencies, starts the app, and opens the browser (or asks first in interactive shells).
-If browser auto-open is blocked by your environment, open manually:
-- http://127.0.0.1:8000
-- PowerShell: `Start-Process http://127.0.0.1:8000`
-To avoid `Permission denied`, run setup via `bash scripts/setup.sh` (as shown above), not `./scripts/setup.sh`.
+Setup installs dependencies, starts the app, and opens the browser.  
+If the browser does not open automatically, navigate to http://127.0.0.1:8000.
+
 Setup installs an `opencommotion` launcher into `~/.local/bin`.
-On Windows + WSL, setup also installs `opencommotion.cmd` into `%USERPROFILE%\.local\bin` and adds it to user PATH if needed.
-If this is your first install, restart PowerShell once so `opencommotion` is recognized.
-If `opencommotion` is not found, add it:
+On Windows + WSL, it also drops `opencommotion.cmd` into `%USERPROFILE%\.local\bin` and updates your PATH.  
+Restart PowerShell once after a first install so the launcher is recognized.
+
+If `opencommotion` is not found after restarting, add it manually:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-PowerShell fallback if PATH has not refreshed yet:
-
-```powershell
-& "$env:USERPROFILE\.local\bin\opencommotion.cmd" -status
-```
-
-The setup panel appears only in setup mode (`/?setup=1`) and stays hidden in normal app usage.
-
-Manual start (if needed):
-
-```bash
-opencommotion run
-```
-
-Fast command aliases (same script, shorter typing):
-
-```bash
-opencommotion -setup
-opencommotion -run
-opencommotion -status
-opencommotion -fresh
-opencommotion -stop
-```
-
-PowerShell equivalent:
-
-```powershell
-opencommotion -setup
-opencommotion -run
-opencommotion -status
-opencommotion -stop
-```
-
-Open the app:
-- http://127.0.0.1:8000
-
-Stop the app:
-
-```bash
-opencommotion down
-```
-
-If startup fails due to a port conflict, the script now exits with a clear error.
-Common recovery path:
-
-```bash
-opencommotion down
-opencommotion run
-```
-
-If the UI loads but prompts look stale or turns behave inconsistently after moving/cloning repos, run:
-
-```bash
-opencommotion fresh
-```
-
-This resets local runtime state and rebuilds UI assets from current source.
-
-If you see `orchestrate failed: request timed out or was aborted` on longer prompts, increase UI request timeout and restart:
-
-```bash
-echo 'VITE_ORCHESTRATE_TIMEOUT_MS=180000' >> .env
-opencommotion run
-```
-
-If you still see the old error text `signal is aborted without reason`, you are on an older UI build/launcher.
-Run this recovery sequence, then hard-refresh the browser (`Ctrl+Shift+R`):
-
-```bash
-opencommotion where
-opencommotion version
-opencommotion update
-opencommotion run
-```
-
-If you ever see `bash: ./scripts/setup.sh: Permission denied`:
-
-```bash
-cd ~/apps/opencommotion
-bash scripts/setup.sh
-```
-
-If you see `vite: Permission denied` during setup/run in WSL, update and retry first:
+### Update
 
 ```bash
 opencommotion update
 ```
 
-If it still fails on an older checkout:
+Stops the stack if running, pulls latest, reinstalls dependencies, and restarts automatically.
+
+### Start / stop
 
 ```bash
-chmod +x node_modules/.bin/vite apps/ui/node_modules/.bin/vite 2>/dev/null || true
-opencommotion -run
+opencommotion run    # start
+opencommotion down   # stop
 ```
+
+Open the app: http://127.0.0.1:8000
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| Port conflict on startup | `opencommotion down && opencommotion run` |
+| Stale UI / inconsistent turns after clone/move | `opencommotion fresh` |
+| `orchestrate failed: request timed out` on long prompts | `echo 'VITE_ORCHESTRATE_TIMEOUT_MS=180000' >> .env && opencommotion run` |
+| `Permission denied` on setup.sh or vite | `opencommotion update` |
+| Older build: `signal is aborted without reason` | `opencommotion update && opencommotion run`, then `Ctrl+Shift+R` in browser |
 
 ## First 2 Minutes In The App
 
@@ -252,21 +180,25 @@ Visual-intelligence scenario requirements and certification matrix:
 
 ## Codex CLI End-to-End (Step by Step)
 
-1. Bootstrap repo and dependencies:
-
-Linux/macOS/Git Bash/WSL shell:
+1. Clone and set up (first time) or update (if you already have it):
 
 ```bash
-mkdir -p /home/$USER/apps && if [ -d /home/$USER/apps/opencommotion/.git ]; then git -C /home/$USER/apps/opencommotion restore --worktree --staged apps/ui/dist/index.html || true; git -C /home/$USER/apps/opencommotion clean -fd apps/ui/dist/assets || true; git -C /home/$USER/apps/opencommotion pull --ff-only origin main; else git clone https://github.com/masltov-creations/OpenCommotion /home/$USER/apps/opencommotion; fi && cd /home/$USER/apps/opencommotion && bash scripts/setup.sh
+# First install
+git clone https://github.com/masltov-creations/OpenCommotion ~/apps/opencommotion
+cd ~/apps/opencommotion
+bash scripts/setup.sh
+
+# Already installed — update and restart
+opencommotion update
 ```
 
-PowerShell (calls into WSL):
+Windows PowerShell (first install, runs inside WSL):
 
 ```powershell
-wsl bash -lc 'mkdir -p ~/apps && if [ -d ~/apps/opencommotion/.git ]; then git -C ~/apps/opencommotion restore --worktree --staged apps/ui/dist/index.html || true; git -C ~/apps/opencommotion clean -fd apps/ui/dist/assets || true; git -C ~/apps/opencommotion pull --ff-only origin main; else git clone https://github.com/masltov-creations/OpenCommotion ~/apps/opencommotion; fi && cd ~/apps/opencommotion && bash scripts/setup.sh'
+wsl bash -lc 'git clone https://github.com/masltov-creations/OpenCommotion ~/apps/opencommotion && cd ~/apps/opencommotion && bash scripts/setup.sh'
 ```
 
-If you are already in a WSL shell (`user@host:~$`), do not run the `wsl ...` wrapper.
+> If you are already in a WSL shell (`user@host:~$`), run the Linux commands directly without the `wsl` wrapper.
 
 2. Authenticate Codex CLI once:
 
