@@ -2,6 +2,8 @@
 __pycache__/
 *.pyc
 .venv/
+.venv-1/
+.venv*/
 .pytest_cache/
 
 # Node
@@ -19,15 +21,17 @@ test-results/
 runtime/logs/
 runtime/agent-runs/*.pid
 runtime/agent-runs/*.tmp
+runtime/agent-runs/*.json
+runtime/agent-runs/ports.env
 runtime/prompt-probe/*.json
 runtime/ui-dist/
 runtime/scenes/
-.cache/pw-deps/
+.cache/
 
 # Data artifacts
 services/artifact_registry/data/
 data/audio/
-data/artifacts/bundles/
+data/artifacts/
 *.sqlite3
 *.db
 
@@ -35,6 +39,6 @@ data/artifacts/bundles/
 .DS_Store
 .vscode/
 
-# Voice model binaries (too large for GitHub)
+# Voice model binaries and configs (downloaded by voice-setup)
 data/models/
 runtime/tools/

@@ -961,8 +961,22 @@ def cmd_where() -> int:
     return 0
 
 
+def _is_standard_install() -> bool:
+    """Return True if ROOT looks like the standard install path (~/apps/opencommotion).
+
+    We use this to gate the auto-delete in cmd_uninstall — we never want to
+    silently delete a developer's working clone.
+    """
+    try:
+        home = Path.home()
+        standard = home / "apps" / "opencommotion"
+        return ROOT.resolve() == standard.resolve()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def cmd_uninstall() -> int:
-    """Stop the stack, remove launcher shims, then print the final rm step."""
+    """Stop the stack, remove launcher shims, then delete the install directory."""
     print("Stopping OpenCommotion stack…")
     cmd_down()
 
@@ -970,17 +984,20 @@ def cmd_uninstall() -> int:
     not_found: list[str] = []
 
     # ── WSL / Linux launcher ──────────────────────────────────────────────────
-    if _bash_executable() is not None:
+    bash = _bash_executable()
+    if bash is not None:
         try:
-            import subprocess as _sp
-            r = _sp.run(
-                [_bash_executable(), "-lc", "rm -f ~/.local/bin/opencommotion && echo removed || echo missing"],
+            r = subprocess.run(
+                [bash, "-lc",
+                 "if [ -f ~/.local/bin/opencommotion ]; then "
+                 "rm -f ~/.local/bin/opencommotion && echo removed; "
+                 "else echo missing; fi"],
                 capture_output=True, text=True,
             )
             if "removed" in r.stdout:
-                removed.append("~/.local/bin/opencommotion (WSL)")
+                removed.append("~/.local/bin/opencommotion (WSL/Linux)")
             else:
-                not_found.append("~/.local/bin/opencommotion (WSL)")
+                not_found.append("~/.local/bin/opencommotion (WSL/Linux)")
         except Exception:  # noqa: BLE001
             not_found.append("~/.local/bin/opencommotion (WSL — could not reach)")
 
@@ -995,7 +1012,6 @@ def cmd_uninstall() -> int:
             else:
                 not_found.append(str(cmd_shim))
 
-        # Strip the shim dir from user PATH
         ps_snippet = (
             r"$dir = Join-Path $env:USERPROFILE '.local\bin'; "
             r"$p = [Environment]::GetEnvironmentVariable('Path','User'); "
@@ -1005,8 +1021,7 @@ def cmd_uninstall() -> int:
             r"  Write-Output 'path-cleaned' } else { Write-Output 'path-unchanged' }"
         )
         try:
-            import subprocess as _sp2
-            pr = _sp2.run(
+            pr = subprocess.run(
                 ["powershell.exe", "-NoProfile", "-Command", ps_snippet],
                 capture_output=True, text=True,
             )
@@ -1020,15 +1035,38 @@ def cmd_uninstall() -> int:
     for item in not_found:
         print(f"  skipped : {item} (not found)")
 
-    # ── Final step: delete the install directory ──────────────────────────────
+    # ── Delete the install directory ──────────────────────────────────────────
     print()
-    print("Launchers removed. To complete uninstall, delete the install directory:")
-    if os.name == "nt":
-        print("  wsl rm -rf ~/apps/opencommotion")
+    if not _is_standard_install():
+        # Running from a dev/custom clone — never auto-delete.
+        print(f"Dev workspace detected at {ROOT}")
+        print("Directory NOT deleted (only the standard install at ~/apps/opencommotion is auto-removed).")
+        print("To remove manually: rm -rf <your-clone-path>")
+        return 0
+
+    # Standard install: schedule deferred deletion via a temp script so this
+    # Python process can exit cleanly before the directory disappears.
+    install_path = str(ROOT.resolve())
+    print(f"Scheduling deletion of install directory: {install_path}")
+    if bash is not None:
+        # Escape path for shell safety
+        safe_path = install_path.replace("'", "'\\''")
+        defer_cmd = f"sleep 1; rm -rf '{safe_path}'; echo 'OpenCommotion uninstalled.'"
+        try:
+            subprocess.Popen(
+                [bash, "-c", defer_cmd],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            print("Install directory will be deleted in ~1 second.")
+            print("Uninstall complete. You can close this terminal.")
+        except Exception as exc:  # noqa: BLE001
+            print(f"Could not schedule auto-delete: {exc}")
+            print(f"Please delete manually: rm -rf '{install_path}'")
     else:
-        print("  rm -rf ~/apps/opencommotion")
-    print()
-    print("(This script lives inside that directory, so it cannot delete itself.)")
+        print("No bash available — please delete manually:")
+        print(f"  rm -rf '{install_path}'")
     return 0
 
 
