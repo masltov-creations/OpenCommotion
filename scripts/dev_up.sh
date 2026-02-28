@@ -4,9 +4,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 UI_MODE="${OPENCOMMOTION_UI_MODE:-dev}"
-GATEWAY_PORT=8000
-ORCHESTRATOR_PORT=8001
-UI_DEV_PORT=5173
+# Ports are resolved after arg parsing: dev=8010/8011 (auto-scan), run=8000/8001
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -43,25 +41,41 @@ if [ -z "$PYTHON_BIN" ]; then
   fi
 fi
 
+_is_port_free() {
+  local port="$1"
+  "$PYTHON_BIN" - "$port" <<'PY' 2>/dev/null
+import socket, sys
+port = int(sys.argv[1])
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+try:
+    s.bind(("127.0.0.1", port))
+    s.close()
+    sys.exit(0)
+except OSError:
+    sys.exit(1)
+PY
+}
+
+find_free_port() {
+  local port="$1"
+  local tries=0
+  while [ "$tries" -lt 20 ]; do
+    if _is_port_free "$port"; then
+      echo "$port"
+      return 0
+    fi
+    port=$((port + 1))
+    tries=$((tries + 1))
+  done
+  echo "No free port found starting from $1" >&2
+  return 1
+}
+
 check_port_free() {
   local port="$1"
   local label="$2"
-  if ! "$PYTHON_BIN" - "$port" <<'PY'
-import socket
-import sys
-
-port = int(sys.argv[1])
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-try:
-    sock.bind(("127.0.0.1", port))
-except OSError:
-    sys.exit(1)
-finally:
-    sock.close()
-sys.exit(0)
-PY
-  then
+  if ! _is_port_free "$port"; then
     echo "Port conflict: $label needs 127.0.0.1:$port, but it is already in use." >&2
     echo "Try: opencommotion -stop" >&2
     exit 1
@@ -80,13 +94,28 @@ wait_for_url() {
   return 1
 }
 
-check_port_free "$GATEWAY_PORT" "gateway"
-check_port_free "$ORCHESTRATOR_PORT" "orchestrator"
-if [[ "$UI_MODE" = "dev" ]]; then
-  check_port_free "$UI_DEV_PORT" "ui-dev"
+# ── Resolve actual ports ─────────────────────────────────────────────────────
+if [[ "$UI_MODE" == "dev" ]]; then
+  # Auto-scan for free ports so multiple sessions (installed + dev) can coexist
+  GATEWAY_PORT="$(find_free_port "${OPENCOMMOTION_GATEWAY_PORT:-8010}")"
+  ORCHESTRATOR_PORT="$(find_free_port "${OPENCOMMOTION_ORCHESTRATOR_PORT:-8011}")"
+  UI_DEV_PORT="$(find_free_port "${OPENCOMMOTION_UI_DEV_PORT:-5173}")"
+  echo "Dev ports resolved: gateway=$GATEWAY_PORT, orchestrator=$ORCHESTRATOR_PORT, ui=$UI_DEV_PORT"
+else
+  # Prod/run mode: fixed ports, fail fast on conflict
+  GATEWAY_PORT="${OPENCOMMOTION_GATEWAY_PORT:-8000}"
+  ORCHESTRATOR_PORT="${OPENCOMMOTION_ORCHESTRATOR_PORT:-8001}"
+  UI_DEV_PORT="${OPENCOMMOTION_UI_DEV_PORT:-5173}"
+  check_port_free "$GATEWAY_PORT" "gateway"
+  check_port_free "$ORCHESTRATOR_PORT" "orchestrator"
 fi
 
 mkdir -p runtime/logs runtime/agent-runs data/artifacts/bundles data/audio
+
+# Persist chosen ports so dev_down, playwright, and status commands use the right ones
+printf 'GATEWAY_PORT=%s\nORCHESTRATOR_PORT=%s\nUI_DEV_PORT=%s\nUI_MODE=%s\n' \
+  "$GATEWAY_PORT" "$ORCHESTRATOR_PORT" "$UI_DEV_PORT" "$UI_MODE" \
+  > runtime/agent-runs/ports.env
 
 if [ -f .env ]; then
   # Load .env values as defaults only. Explicit environment variables win.
@@ -135,6 +164,7 @@ if command -v docker >/dev/null 2>&1; then
 fi
 
 export PYTHONPATH="$ROOT"
+export ORCHESTRATOR_URL="http://127.0.0.1:$ORCHESTRATOR_PORT"
 
 nohup "$PYTHON_BIN" -m uvicorn services.gateway.app.main:app --host 127.0.0.1 --port "$GATEWAY_PORT" > runtime/logs/gateway.log 2>&1 &
 echo $! > runtime/agent-runs/gateway.pid
@@ -147,6 +177,7 @@ if [ "$UI_MODE" = "dev" ] && [ -f apps/ui/package.json ]; then
   (
     cd apps/ui
     npm install --silent >/dev/null
+    VITE_GATEWAY_URL="http://127.0.0.1:$GATEWAY_PORT" \
     nohup npm run dev -- --host 127.0.0.1 --port "$UI_DEV_PORT" > "$ROOT/runtime/logs/ui.log" 2>&1 &
     echo $! > "$ROOT/runtime/agent-runs/ui.pid"
   )
@@ -185,4 +216,4 @@ if [ "$UI_MODE" = "dev" ] && [ -f apps/ui/package.json ]; then
   fi
 fi
 
-echo "OpenCommotion dev stack started (ui-mode: $UI_MODE)"
+echo "OpenCommotion stack started (ui-mode: $UI_MODE, gateway: $GATEWAY_PORT, orchestrator: $ORCHESTRATOR_PORT)"
