@@ -27,12 +27,6 @@ Progress checklist:
 - [x] Prompt probe bug-candidate remediation (4 required scenarios closed)
 - [x] Final production readiness sign-off for Streams E/F scope
 - [x] Stream G — hard-delete all pre-canned visual scenes (fish, balls, lines, legacy env-gated blocks)
-- [x] Parallel text+visual generation via `asyncio.to_thread`
-- [x] Coherence assessment agent (opt-in via `OPENCOMMOTION_COHERENCE_ENABLED`)
-- [x] Visual error recovery with `_translate_unsupported_op` (24 known translations)
-- [x] High-quality Windows TTS bootstrap (`opencommotion voice-setup`, Piper `en_US-lessac-high`)
-- [x] All services bind `0.0.0.0` by default; override with `OPENCOMMOTION_BIND_HOST`
-- [x] Windows Firewall rules added during install (`install_windows_shim.sh`, `Private,Domain`)
 
 Active tasks:
 - None. All streams complete.
@@ -44,8 +38,3 @@ Change log:
 - 2026-02-27: Completed Stream F prompt-probe remediation by restoring required template scene routing defaults; prompt compatibility probe now returns `required_failures=0`.
 - 2026-02-27: Completed live-stack prompt compatibility probe with `required_failures=0`, closing Stream E and Stream F scope.
 - 2026-02-28: Stream G complete (`cbe9b12`) — hard-deleted all pre-canned visual scenes (fish, bouncing balls, line-composition, legacy env-gated blocks). All related tests removed/renamed. 130 passing.
-- 2026-02-28: Added parallel text+visual generation via `asyncio.to_thread`, coherence assessment agent (`OPENCOMMOTION_COHERENCE_ENABLED`), visual error recovery with 24-op translation table, and `_fallback_visual_strokes` (`cbe9b12`).
-- 2026-02-28: Added `opencommotion voice-setup` one-command Windows bootstrap for high-quality Piper TTS (binary + `en_US-lessac-high` model download + `.env` defaults).
-- 2026-02-28: Defaulted setup wizard TTS choice to Piper `en_US-lessac-high` for simpler first-run quality.
-- 2026-02-28: All services now bind `0.0.0.0` by default (`7bbe8c6`); `OPENCOMMOTION_BIND_HOST` overrides. Fixes WSL2→Windows browser access.
-- 2026-02-28: Added Windows Firewall inbound rules for app ports during `install_windows_shim.sh` via RunAs elevation, `Profile Private,Domain` (`4801ee6`).
