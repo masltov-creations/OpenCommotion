@@ -203,6 +203,25 @@ def test_rewrite_visual_prompt_supports_scene_request(tmp_path, monkeypatch) -> 
     assert meta["scene_request"] is True
 
 
+def test_rewrite_visual_prompt_parses_json_schema_response(tmp_path, monkeypatch) -> None:
+    fake_codex = tmp_path / "fake-codex-json-rewrite"
+    fake_codex = _write_executable(
+        fake_codex,
+        '{"type":"item.completed","item":{"type":"agent_message","text":"{\\"visual_prompt\\":\\"draw a fish bowl with one fish and animate it left to right\\",\\"scene_request\\":\\"no\\",\\"tool_handles\\":[\\"spawnSceneActor\\",\\"setActorMotion\\"],\\"foundation_entities\\":[\\"actors\\"],\\"language_semantics\\":[\\"imperative\\",\\"motion-explicit\\"]}"}}',
+    )
+    monkeypatch.setenv("OPENCOMMOTION_LLM_PROVIDER", "codex-cli")
+    monkeypatch.setenv("OPENCOMMOTION_LLM_ALLOW_FALLBACK", "false")
+    monkeypatch.setenv("OPENCOMMOTION_CODEX_BIN", str(fake_codex))
+
+    rewritten, meta = worker.rewrite_visual_prompt(
+        "show fish bowl",
+        context="scene_id=fish revision=0 entity_count=0",
+        first_turn=True,
+    )
+    assert rewritten.startswith("draw a fish bowl")
+    assert meta["scene_request"] is False
+
+
 def test_generate_text_response_with_openclaw_cli_provider(tmp_path, monkeypatch) -> None:
     fake_openclaw = tmp_path / "fake-openclaw"
     fake_openclaw = _write_executable(
