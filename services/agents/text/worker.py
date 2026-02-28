@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -297,13 +298,14 @@ def _rewrite_max_chars() -> int:
 
 def _build_rewrite_request(prompt: str, context: str, first_turn: bool) -> str:
     example_block = (
-        "Examples:\n"
-        "- User: show 2 bouncing balls\n"
-        "  VISUAL_PROMPT: draw two colored circles and animate both with bounce motion\n"
-        "  SCENE_REQUEST: no\n"
-        "- User: make the fish blooop\n"
-        "  VISUAL_PROMPT: update fish behavior to bloop while keeping existing bowl and scene entities intact\n"
-        "  SCENE_REQUEST: no\n"
+        "Concise example:\n"
+        "{\n"
+        "  \"visual_prompt\": \"draw two circles and animate both with bounce motion\",\n"
+        "  \"scene_request\": \"no\",\n"
+        "  \"tool_handles\": [\"spawnSceneActor\", \"setActorMotion\"],\n"
+        "  \"foundation_entities\": [\"actors\"],\n"
+        "  \"language_semantics\": [\"imperative\", \"count-explicit\", \"motion-explicit\"]\n"
+        "}\n"
     )
     mode_note = (
         "Turn mode: first turn. Build a complete initial scene with explicit actors and motion."
@@ -312,19 +314,36 @@ def _build_rewrite_request(prompt: str, context: str, first_turn: bool) -> str:
     )
     return (
         "You are OpenCommotion prompt-planner. Rewrite user input into a concrete render/update prompt.\n"
-        "Runtime contract:\n"
-        "- The output will be executed by a visual scene compiler.\n"
-        "- Use reusable primitives: actors, motion, fx, materials, camera, environment.\n"
-        "- Keep nouns explicit (fish, bowl, ball, chart) and include counts when present.\n"
-        "- For follow-ups, preserve continuity and mutate existing scene where possible.\n"
-        "- Never ask questions; always provide executable visual intent.\n"
+        "Runtime context instructions:\n"
+        "- You are inside OpenCommotion orchestrator and your output feeds a visual scene compiler.\n"
+        "- You must return executable visual intent; never ask clarification questions.\n"
+        "- If first turn: compose a complete initial scene. If follow-up: apply minimal deterministic updates.\n"
+        "- Keep nouns explicit and counted when provided (fish, bowl, ball, chart, labels, segments).\n"
+        "\n"
+        "User context semantics (how to interpret context):\n"
+        "- scene_brief: current scene summary (ids, counts, phase).\n"
+        "- capability_brief: runtime/render + provider constraints.\n"
+        "- turn_phase: first-turn or follow-up, controls create-vs-update strategy.\n"
+        "- entity_details: known entity ids to preserve/reuse on follow-up turns.\n"
+        "- system_prompt_override: hard guardrail text that must be honored if present.\n"
+        "\n"
+        "Available handles (use as needed):\n"
+        "- tool_handles: setRenderMode, spawnSceneActor, setActorMotion, setActorAnimation, runScreenScript, annotateInsight, emitFx, setEnvironmentMood, setCameraMove, setLyricsTrack, applyMaterialFx, sceneMorph.\n"
+        "- template_handles: spawnCharacter, animateMoonwalk, orbitGlobe, ufoLandingBeat, drawAdoptionCurve, drawPieSaturation, drawSegmentedAttachBars.\n"
+        "- foundation_entities: actors, charts, camera, environment, materials, fx, annotations, lyrics timeline.\n"
+        "- language_semantics: imperative verb first (draw/update/show), continuity-aware ids, explicit motion verbs, explicit timing hints, explicit counts, style/mood tags.\n"
         f"{mode_note}\n\n"
         f"Scene context snapshot:\n{context}\n\n"
         f"{example_block}\n"
         f"User prompt:\n{prompt}\n\n"
-        "Return EXACTLY two lines:\n"
-        "VISUAL_PROMPT: <one line imperative prompt starting with draw/update/show>\n"
-        "SCENE_REQUEST: <yes|no>\n"
+        "Return EXACTLY one JSON object with this schema:\n"
+        "{\n"
+        "  \"visual_prompt\": \"<one-line imperative prompt starting with draw/update/show>\",\n"
+        "  \"scene_request\": \"<yes|no>\",\n"
+        "  \"tool_handles\": [\"<subset of handles you used>\"],\n"
+        "  \"foundation_entities\": [\"<entities touched>\"],\n"
+        "  \"language_semantics\": [\"<semantic choices used>\"]\n"
+        "}\n"
     )
 
 
@@ -332,6 +351,24 @@ def _parse_rewrite_response(raw: str, fallback: str) -> tuple[str, bool]:
     clean = raw.strip().replace("\r", "")
     scene_request = False
     prompt_line = ""
+
+    if clean.startswith("{") and clean.endswith("}"):
+        try:
+            payload = json.loads(clean)
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, dict):
+            candidate_prompt = str(payload.get("visual_prompt", "")).strip()
+            raw_scene_request = str(payload.get("scene_request", "")).strip().lower()
+            scene_request = raw_scene_request in {"yes", "true", "1"}
+            if candidate_prompt:
+                candidate_prompt = candidate_prompt.strip("`\"' ")
+                candidate_prompt = " ".join(candidate_prompt.split())
+                if candidate_prompt and not _looks_like_clarification_request(candidate_prompt):
+                    limit = _rewrite_max_chars()
+                    if len(candidate_prompt) > limit:
+                        candidate_prompt = candidate_prompt[:limit].rstrip()
+                    return candidate_prompt, scene_request
 
     for line in clean.split("\n"):
         row = line.strip()

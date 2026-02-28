@@ -215,3 +215,9 @@ def test_v2_orchestrate_applies_prompt_rewrite_and_scene_request_flow(tmp_path, 
     assert any(str(row).startswith("prompt_rewrite_applied:") for row in warnings)
     assert "agent_scene_request_honored" in warnings
     assert len(calls) >= 2
+    first_context = str(calls[0].get("context", ""))
+    assert "turn_phase: first-turn" in first_context
+    assert "scene_brief:" in first_context
+    assert "capability_brief:" in first_context
+    assert "entity_details:" in first_context
+    assert "context_meaning:" in first_context

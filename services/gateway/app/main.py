@@ -828,12 +828,18 @@ def _resolve_orchestration_prompt_v2(
 
     first_turn = current_revision <= 0
     phase = "first-turn" if first_turn else "follow-up-turn"
-    context = (
-        f"invocation={phase}; "
-        + _capability_context(req)
-        + "; "
-        + _scene_context_brief(scene=scene, scene_id=scene_id, revision=current_revision)
-    )
+    entity_ids = sorted(str(key) for key in scene.get("entities", {}).keys())[:16]
+    context_lines = [
+        f"turn_phase: {phase}",
+        f"scene_brief: {_scene_context_brief(scene=scene, scene_id=scene_id, revision=current_revision)}",
+        f"capability_brief: {_capability_context(req)}",
+        "entity_details: " + (", ".join(entity_ids) if entity_ids else "none"),
+        (
+            "context_meaning: scene_brief=state snapshot; capability_brief=runtime constraints; "
+            "turn_phase=create-vs-update mode; entity_details=reusable ids"
+        ),
+    ]
+    context = "\n".join(context_lines)
 
     try:
         rewritten, meta = rewrite_visual_prompt(prompt=prompt, context=context, first_turn=first_turn)
