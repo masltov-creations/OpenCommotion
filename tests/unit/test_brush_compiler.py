@@ -149,6 +149,109 @@ def test_compile_lyrics_track_generates_words_path() -> None:
     assert lyric_patch["value"]["items"][1]["at_ms"] == 550
 
 
+def test_compile_run_screen_script_rect_op_creates_rect_actor() -> None:
+    patches = compile_brush_batch(
+        [
+            {
+                "stroke_id": "script-rect",
+                "kind": "runScreenScript",
+                "params": {
+                    "program": {
+                        "commands": [
+                            {
+                                "op": "rect",
+                                "id": "house_walls",
+                                "point": [270, 168],
+                                "width": 180,
+                                "height": 130,
+                                "fill": "#f59e0b",
+                                "stroke": "#e2e8f0",
+                                "line_width": 2,
+                            }
+                        ]
+                    }
+                },
+                "timing": {"start_ms": 0, "duration_ms": 1000, "easing": "linear"},
+            }
+        ]
+    )
+    actor = next(p for p in patches if p["path"] == "/actors/house_walls")
+    assert actor["value"]["type"] == "rect"
+    assert actor["value"]["x"] == 270
+    assert actor["value"]["y"] == 168
+    assert actor["value"]["style"]["width"] == 180
+    assert actor["value"]["style"]["height"] == 130
+    assert actor["value"]["style"]["fill"] == "#f59e0b"
+
+
+def test_compile_run_screen_script_ellipse_op_creates_ellipse_actor() -> None:
+    patches = compile_brush_batch(
+        [
+            {
+                "stroke_id": "script-ellipse",
+                "kind": "runScreenScript",
+                "params": {
+                    "program": {
+                        "commands": [
+                            {
+                                "op": "ellipse",
+                                "id": "planet_ring",
+                                "point": [360, 180],
+                                "rx": 92,
+                                "ry": 22,
+                                "fill": "none",
+                                "stroke": "#f59e0b",
+                                "line_width": 4,
+                            }
+                        ]
+                    }
+                },
+                "timing": {"start_ms": 0, "duration_ms": 1000, "easing": "linear"},
+            }
+        ]
+    )
+    actor = next(p for p in patches if p["path"] == "/actors/planet_ring")
+    assert actor["value"]["type"] == "ellipse"
+    assert actor["value"]["x"] == 360
+    assert actor["value"]["y"] == 180
+    assert actor["value"]["style"]["rx"] == 92
+    assert actor["value"]["style"]["ry"] == 22
+    assert actor["value"]["style"]["fill"] == "none"   # ring outline preserved
+
+
+def test_compile_run_screen_script_text_op_creates_text_actor() -> None:
+    patches = compile_brush_batch(
+        [
+            {
+                "stroke_id": "script-text",
+                "kind": "runScreenScript",
+                "params": {
+                    "program": {
+                        "commands": [
+                            {
+                                "op": "text",
+                                "id": "label_title",
+                                "point": [360, 50],
+                                "text": "Hello OpenCommotion",
+                                "fill": "#f8fafc",
+                                "font_size": 24,
+                            }
+                        ]
+                    }
+                },
+                "timing": {"start_ms": 0, "duration_ms": 1000, "easing": "linear"},
+            }
+        ]
+    )
+    actor = next(p for p in patches if p["path"] == "/actors/label_title")
+    assert actor["value"]["type"] == "text"
+    assert actor["value"]["x"] == 360
+    assert actor["value"]["y"] == 50
+    assert actor["value"]["style"]["text"] == "Hello OpenCommotion"
+    assert actor["value"]["style"]["font_size"] == 24
+    assert actor["value"]["style"]["fill"] == "#f8fafc"
+
+
 def test_compile_run_screen_script_generates_primitives_and_motion() -> None:
     patches = compile_brush_batch(
         [
