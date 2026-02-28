@@ -94,7 +94,11 @@ wait_for_url() {
   return 1
 }
 
-# ── Resolve actual ports ─────────────────────────────────────────────────────
+# ── Resolve bind host and actual ports ──────────────────────────────────────
+# Default to 0.0.0.0 so the app is reachable from Windows when running in WSL.
+# Set OPENCOMMOTION_BIND_HOST=127.0.0.1 to restrict to loopback only.
+BIND_HOST="${OPENCOMMOTION_BIND_HOST:-0.0.0.0}"
+
 if [[ "$UI_MODE" == "dev" ]]; then
   # Auto-scan for free ports so multiple sessions (installed + dev) can coexist
   GATEWAY_PORT="$(find_free_port "${OPENCOMMOTION_GATEWAY_PORT:-8010}")"
@@ -166,10 +170,10 @@ fi
 export PYTHONPATH="$ROOT"
 export ORCHESTRATOR_URL="http://127.0.0.1:$ORCHESTRATOR_PORT"
 
-nohup "$PYTHON_BIN" -m uvicorn services.gateway.app.main:app --host 127.0.0.1 --port "$GATEWAY_PORT" > runtime/logs/gateway.log 2>&1 &
+nohup "$PYTHON_BIN" -m uvicorn services.gateway.app.main:app --host "$BIND_HOST" --port "$GATEWAY_PORT" > runtime/logs/gateway.log 2>&1 &
 echo $! > runtime/agent-runs/gateway.pid
 
-nohup "$PYTHON_BIN" -m uvicorn services.orchestrator.app.main:app --host 127.0.0.1 --port "$ORCHESTRATOR_PORT" > runtime/logs/orchestrator.log 2>&1 &
+nohup "$PYTHON_BIN" -m uvicorn services.orchestrator.app.main:app --host "$BIND_HOST" --port "$ORCHESTRATOR_PORT" > runtime/logs/orchestrator.log 2>&1 &
 echo $! > runtime/agent-runs/orchestrator.pid
 
 if [ "$UI_MODE" = "dev" ] && [ -f apps/ui/package.json ]; then
@@ -178,7 +182,7 @@ if [ "$UI_MODE" = "dev" ] && [ -f apps/ui/package.json ]; then
     cd apps/ui
     npm install --silent >/dev/null
     VITE_GATEWAY_URL="http://127.0.0.1:$GATEWAY_PORT" \
-    nohup npm run dev -- --host 127.0.0.1 --port "$UI_DEV_PORT" > "$ROOT/runtime/logs/ui.log" 2>&1 &
+    nohup npm run dev -- --host "$BIND_HOST" --port "$UI_DEV_PORT" > "$ROOT/runtime/logs/ui.log" 2>&1 &
     echo $! > "$ROOT/runtime/agent-runs/ui.pid"
   )
 fi
@@ -208,7 +212,7 @@ if ! wait_for_url "http://127.0.0.1:$ORCHESTRATOR_PORT/health" 30; then
 fi
 
 if [ "$UI_MODE" = "dev" ] && [ -f apps/ui/package.json ]; then
-  if ! wait_for_url "http://127.0.0.1:$UI_DEV_PORT" 45; then
+  if ! wait_for_url "http://127.0.0.1:$UI_DEV_PORT" 45 && ! wait_for_url "http://0.0.0.0:$UI_DEV_PORT" 5; then
     echo "UI dev server failed to start on port $UI_DEV_PORT." >&2
     tail -n 60 runtime/logs/ui.log >&2 || true
     bash scripts/dev_down.sh >/dev/null 2>&1 || true
