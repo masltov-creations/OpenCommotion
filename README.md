@@ -24,26 +24,19 @@ Prerequisites: Python 3.11+, Node.js 20+, npm.
 
 ### Install
 
-Linux / macOS / Git Bash / WSL shell:
+Linux / macOS / WSL shell (on Windows, open your WSL distro first):
 
 ```bash
-[ -d ~/apps/opencommotion/.git ] || rm -rf ~/apps/opencommotion
-git clone https://github.com/masltov-creations/OpenCommotion ~/apps/opencommotion \
-  || git -C ~/apps/opencommotion pull --ff-only
+git clone https://github.com/masltov-creations/OpenCommotion ~/apps/opencommotion
 cd ~/apps/opencommotion
 bash scripts/setup.sh
 ```
 
-Windows PowerShell (runs inside WSL):
+If you already cloned earlier, just `cd ~/apps/opencommotion` and run `opencommotion update`.
 
-```powershell
-wsl bash -lc '[ -d ~/apps/opencommotion/.git ] || rm -rf ~/apps/opencommotion; git clone https://github.com/masltov-creations/OpenCommotion ~/apps/opencommotion || git -C ~/apps/opencommotion pull --ff-only; cd ~/apps/opencommotion && bash scripts/setup.sh'
-```
+> If you are in plain PowerShell, run `wsl` once, then the commands above inside WSL.
 
-> If your shell prompt already looks like `user@host:~$` you are in WSL — run the Linux commands directly, do not wrap with `wsl`.
-
-Setup installs dependencies, starts the app, and opens the browser.  
-If the browser does not open automatically, navigate to http://127.0.0.1:8000.
+Setup installs dependencies, starts the app, and opens the browser — no extra manual downloads or status checks required. It will ask before adding optional Windows firewall rules (only needed for access from Windows/external networks), and uninstall removes them automatically. Setup reuses a single repo-local virtual env; reruns do not create new ones.
 
 Setup installs an `opencommotion` launcher into `~/.local/bin`.
 On Windows + WSL, it also drops `opencommotion.cmd` into `%USERPROFILE%\.local\bin` and updates your PATH.  
@@ -78,6 +71,7 @@ Open the app: http://127.0.0.1:8000
 |---|---|
 | Port conflict on startup | `opencommotion down && opencommotion run` |
 | Stale UI / inconsistent turns after clone/move | `opencommotion fresh` |
+| UI not loading / blank page | `opencommotion status` then `opencommotion run`; if still blank, `OPENCOMMOTION_SKIP_UI_BUILD=1 opencommotion run` to use bundled UI dist |
 | `orchestrate failed: request timed out` on long prompts | `echo 'VITE_ORCHESTRATE_TIMEOUT_MS=180000' >> .env && opencommotion run` |
 | `Permission denied` on setup.sh or vite | `opencommotion update` |
 | Older build: `signal is aborted without reason` | `opencommotion update && opencommotion run`, then `Ctrl+Shift+R` in browser |
