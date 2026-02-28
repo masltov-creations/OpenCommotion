@@ -29,7 +29,9 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
-    host: '127.0.0.1',
+    // Default to 0.0.0.0 so the dev server is reachable from Windows when running in WSL.
+    // Override with VITE_HOST=127.0.0.1 to restrict to loopback.
+    host: process.env.VITE_HOST || '0.0.0.0',
     port: 5173,
   },
   test: {
