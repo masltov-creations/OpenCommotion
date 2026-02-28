@@ -40,6 +40,7 @@ body {
   gap: 12px;
   padding: 12px;
   min-height: 100vh;
+  grid-template-rows: auto 1fr;
 }
 
 .brand-bar {
@@ -106,17 +107,17 @@ body {
   min-width: 110px;
 }
 
-.studio-main {
-  display: grid;
-  gap: 10px;
-  align-content: start;
-}
-
-/* ─── Stage-main (layout alias for studio-main) ─────────────────── */
 .stage-main {
   display: grid;
-  gap: 10px;
-  align-content: start;
+  gap: 12px;
+  grid-template-columns: minmax(540px, 2fr) minmax(360px, 1fr);
+  grid-template-rows: auto auto 1fr;
+  grid-template-areas:
+    "visual settings"
+    "composer settings"
+    "log settings";
+  align-items: start;
+  min-height: calc(100vh - 150px);
 }
 
 /* ─── Brand bar layout ─────────────────────────────────────────── */
@@ -167,31 +168,38 @@ body {
 }
 
 .visual-stage-card {
-  min-height: clamp(260px, 45vh, 520px);
+  grid-area: visual;
+  min-height: clamp(320px, 55vh, 540px);
 }
 
 .visual-canvas {
   width: 100%;
-  height: clamp(260px, 45vh, 520px);
+  height: 100%;
   border-radius: 14px;
   border: 1px solid rgba(125, 211, 252, 0.33);
   background: rgba(2, 6, 23, 0.35);
 }
 
 .prompt-composer {
-  max-height: clamp(140px, 22vh, 260px);
-  overflow-y: auto;
+  grid-area: composer;
+  max-height: none;
+  display: grid;
+  gap: 8px;
 }
 
 .agent-log-panel {
-  min-height: 170px;
+  grid-area: log;
+  min-height: clamp(220px, 26vh, 320px);
+  display: flex;
+  flex-direction: column;
 }
 
 .agent-log-window {
   border: 1px solid rgba(148, 163, 184, 0.3);
   border-radius: 10px;
   background: rgba(2, 6, 23, 0.45);
-  max-height: 210px;
+  flex: 1;
+  min-height: 160px;
   overflow-y: auto;
   padding: 8px;
   display: grid;
@@ -227,59 +235,33 @@ body {
   margin-bottom: 8px;
 }
 
-.tools-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(2, 6, 23, 0.52);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 180ms ease;
-  z-index: 30;
+.settings-panel {
+  grid-area: settings;
+  position: sticky;
+  top: 12px;
+  align-self: start;
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+  display: grid;
+  gap: 12px;
 }
 
-.tools-overlay.open {
-  opacity: 1;
-  pointer-events: auto;
+.settings-panel.collapsed {
+  max-height: 86px;
+  overflow: hidden;
 }
 
-.tools-drawer {
-  position: fixed;
-  top: 0;
-  right: 0;
-  height: 100vh;
-  width: min(460px, 96vw);
-  border-radius: 0;
-  border-left: 1px solid rgba(148, 163, 184, 0.3);
-  visibility: hidden;
-  pointer-events: none;
-  transform: translateX(100%);
-  transition: transform 220ms ease, visibility 0ms linear 220ms;
-  z-index: 40;
-  overflow-y: auto;
-}
-
-.tools-drawer.open {
-  visibility: visible;
-  pointer-events: auto;
-  transform: translateX(0);
-  transition: transform 220ms ease, visibility 0ms linear 0ms;
-}
-
-.drawer-header {
+.settings-header {
   position: sticky;
   top: 0;
   z-index: 5;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin: -12px -12px 12px -12px;
+  margin: -12px -12px 6px -12px;
   padding: 12px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.2);
   background: rgba(2, 10, 29, 0.95);
-}
-
-.drawer-header h2 {
-  margin: 0;
 }
 
 .control-panel {
@@ -287,48 +269,6 @@ body {
   gap: 12px;
 }
 
-.section-block {
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 12px;
-  padding: 12px;
-  background: rgba(15, 23, 42, 0.38);
-}
-
-.section-block h2,
-.section-block h3,
-.card h2 {
-  margin: 0 0 8px 0;
-}
-
-.section-block h2 {
-  font-size: 18px;
-}
-
-.section-block h3,
-.voice-panel h3,
-.setup-panel h3 {
-  font-size: 14px;
-}
-
-textarea,
-input,
-select {
-  width: 100%;
-  border: 1px solid rgba(148, 163, 184, 0.38);
-  border-radius: 10px;
-  background: var(--panel-strong);
-  color: var(--text-main);
-  padding: 10px;
-  margin-bottom: 10px;
-}
-
-textarea::placeholder,
-input::placeholder {
-  color: #7dd3fc;
-}
-
-textarea:focus,
-input:focus,
 select:focus {
   outline: none;
   border-color: rgba(34, 211, 238, 0.72);
@@ -506,14 +446,25 @@ button:disabled {
   }
 
   .visual-stage-card {
-    min-height: clamp(260px, 40vh, 460px);
+    min-height: clamp(260px, 42vh, 480px);
   }
 
   .visual-canvas {
-    height: clamp(260px, 40vh, 460px);
+    height: clamp(260px, 42vh, 480px);
   }
 
-  .prompt-composer {
+  .stage-main {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "visual"
+      "composer"
+      "log"
+      "settings";
+  }
+
+  .settings-panel {
+    position: relative;
+    top: auto;
     max-height: none;
   }
 }
@@ -538,7 +489,8 @@ button:disabled {
 
 /* ─── Turn Pipeline Progress Bar ───────────────────────────────── */
 .turn-pipeline-wrap {
-  margin-bottom: 10px;
+  margin: 0 auto 10px;
+  max-width: 720px;
 }
 
 .pipeline-prompt-preview {
@@ -556,6 +508,7 @@ button:disabled {
 
 .turn-pipeline-svg {
   width: 100%;
+  max-width: 720px;
   height: 72px;
   display: block;
   overflow: visible;
