@@ -125,3 +125,27 @@ def test_draw_prompt_with_relative_xyz_points_uses_script_points() -> None:
     polyline = next(cmd for cmd in commands if cmd.get("op") == "polyline")
     assert polyline["relative"] is True
     assert len(polyline["points"]) == 3
+
+
+def test_paint_straight_and_bendy_lines_generates_composable_script_commands() -> None:
+    strokes = generate_visual_strokes("paint 3 straight lines and 1 bendy line")
+    kinds = [row["kind"] for row in strokes]
+    assert "runScreenScript" in kinds
+
+    script = next(row for row in strokes if row["kind"] == "runScreenScript")
+    commands = script["params"]["program"]["commands"]
+    polylines = [cmd for cmd in commands if cmd.get("op") == "polyline"]
+    assert len(polylines) == 4
+
+    straight = [cmd for cmd in polylines if str(cmd.get("id", "")).startswith("straight_line_")]
+    bendy = [cmd for cmd in polylines if str(cmd.get("id", "")).startswith("bendy_line_")]
+    assert len(straight) == 3
+    assert len(bendy) == 1
+    assert all(len(cmd.get("points", [])) == 2 for cmd in straight)
+    assert all(len(cmd.get("points", [])) >= 4 for cmd in bendy)
+
+
+def test_paint_straight_and_bendy_lines_3d_sets_3d_mode() -> None:
+    strokes = generate_visual_strokes("paint 3 straight lines and 1 bendy line in 3-d")
+    render = next(row for row in strokes if row["kind"] == "setRenderMode")
+    assert render.get("params", {}).get("mode") == "3d"

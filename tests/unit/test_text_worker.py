@@ -222,6 +222,25 @@ def test_rewrite_visual_prompt_parses_json_schema_response(tmp_path, monkeypatch
     assert meta["scene_request"] is False
 
 
+def test_rewrite_visual_prompt_rejects_invalid_json_schema_and_falls_back(tmp_path, monkeypatch) -> None:
+    fake_codex = tmp_path / "fake-codex-invalid-json-rewrite"
+    fake_codex = _write_executable(
+        fake_codex,
+        '{"type":"item.completed","item":{"type":"agent_message","text":"{\\"scene_request\\":\\"no\\"}"}}',
+    )
+    monkeypatch.setenv("OPENCOMMOTION_LLM_PROVIDER", "codex-cli")
+    monkeypatch.setenv("OPENCOMMOTION_LLM_ALLOW_FALLBACK", "false")
+    monkeypatch.setenv("OPENCOMMOTION_CODEX_BIN", str(fake_codex))
+
+    rewritten, meta = worker.rewrite_visual_prompt(
+        "paint 3 straight lines and 1 bendy line",
+        context="scene_id=lines revision=0 entity_count=0",
+        first_turn=True,
+    )
+    assert rewritten == "paint 3 straight lines and 1 bendy line"
+    assert meta["scene_request"] is False
+
+
 def test_generate_text_response_with_openclaw_cli_provider(tmp_path, monkeypatch) -> None:
     fake_openclaw = tmp_path / "fake-openclaw"
     fake_openclaw = _write_executable(

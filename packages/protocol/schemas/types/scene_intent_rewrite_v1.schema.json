@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "opencommotion/types/scene_intent_rewrite_v1.schema.json",
+  "title": "SceneIntentRewriteV1",
+  "type": "object",
+  "required": ["visual_prompt", "scene_request"],
+  "properties": {
+    "visual_prompt": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1600
+    },
+    "scene_request": {
+      "type": "string",
+      "enum": ["yes", "no"]
+    },
+    "tool_handles": {
+      "type": "array",
+      "items": { "type": "string" },
+      "maxItems": 32
+    },
+    "foundation_entities": {
+      "type": "array",
+      "items": { "type": "string" },
+      "maxItems": 32
+    },
+    "language_semantics": {
+      "type": "array",
+      "items": { "type": "string" },
+      "maxItems": 32
+    }
+  },
+  "additionalProperties": false
+}
