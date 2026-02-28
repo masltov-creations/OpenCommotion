@@ -509,7 +509,7 @@ export default function App() {
   const [queuedPrompt, setQueuedPrompt] = useState('autonomous turn: continue narrative and visuals')
   const [runActionLoading, setRunActionLoading] = useState(false)
   const [browserSpeaking, setBrowserSpeaking] = useState(false)
-  const [toolsOpen, setToolsOpen] = useState(false)
+  const [toolsOpen, setToolsOpen] = useState(true)
   const [debugOpen, setDebugOpen] = useState(false)
   const [agentLog, setAgentLog] = useState<AgentLogEntry[]>([])
   const [settingsTab, setSettingsTab] = useState<'llm' | 'voice' | 'auth' | 'runs' | 'artifacts'>('llm')
@@ -1380,193 +1380,192 @@ export default function App() {
             ) : null}
 
             {segmentedValues.length ? (
-              <g>
-                <rect x="430" y="46" width="248" height="140" fill="#020617aa" rx="12" />
-                {segmentedValues.map((segment, idx) => {
-                  const barBaseY = 168
-                  const barHeight = Math.round((segment.current / 100) * 84)
-                  const x = 446 + idx * 76
-                  const y = barBaseY - barHeight
-                  return (
-                    <g key={`seg-${segment.label}`}>
-                      <rect x={x} y={y} width="42" height={barHeight} fill={segment.color || '#22d3ee'} rx="6" />
-                      <text x={x + 21} y={barBaseY + 15} textAnchor="middle" fill="#cbd5e1" fontSize="10">
-                        {segment.label}
-                      </text>
-                      <text x={x + 21} y={y - 4} textAnchor="middle" fill="#e2e8f0" fontSize="10">
-                        {segment.current}%
-                      </text>
-                    </g>
-                  )
-                })}
-              </g>
-            ) : null}
+            <aside className={`card settings-panel ${toolsOpen ? 'open' : 'collapsed'}`} aria-label="settings panel">
+              <div className="settings-header">
+                <div>
+                  <p className="eyebrow">Control panel</p>
+                  <h2>Settings</h2>
+                </div>
+                <button onClick={() => setToolsOpen((current) => !current)} aria-expanded={toolsOpen}>
+                  {toolsOpen ? 'Hide' : 'Show'}
+                </button>
+              </div>
 
-            {causticFx ? (
-              <g opacity={Math.max(0.15, Math.min(0.6, Number(causticFx.intensity || 0.32)))}>
-                <path d="M210 272 C260 228, 338 308, 390 258" stroke="#fde68a" strokeWidth="4" fill="none" />
-                <path d="M240 292 C302 244, 362 316, 426 268" stroke="#fef9c3" strokeWidth="3" fill="none" />
-              </g>
-            ) : null}
+              {toolsOpen ? (
+                <div className="control-panel">
+                  {setupMode ? (
+                    <section className="setup-panel">
+                      <h3>Setup Status</h3>
+                      <p className="muted">LLM provider: {llmProvider}</p>
+                      <p className="muted">Active route: {llmEffectiveProvider}</p>
+                      <p className="muted">LLM ready: {llmReady ? 'yes' : 'needs config'}</p>
+                      <p className="muted">STT engine: {sttEngine}</p>
+                      <p className="muted">TTS engine: {ttsEngine}</p>
+                      {runtimeCaps?.llm?.message ? <p className="error">{runtimeCaps.llm.message}</p> : null}
+                      {capsError ? <p className="error">{capsError}</p> : null}
+                      <div className="row">
+                        <button onClick={refreshRuntimeCapabilities} disabled={capsLoading}>
+                          {capsLoading ? 'Refreshing...' : 'Refresh Setup'}
+                        </button>
+                        <button onClick={loadSetupState} disabled={setupLoading}>
+                          {setupLoading ? 'Loading...' : 'Load Wizard'}
+                        </button>
+                      </div>
+                      <p className="muted">Setup Wizard step {setupStep}/3</p>
+                      <div className="row">
+                        <button onClick={() => setSetupStep((current) => Math.max(1, current - 1))} disabled={setupStep <= 1}>
+                          Previous
+                        </button>
+                        <button onClick={() => setSetupStep((current) => Math.min(3, current + 1))} disabled={setupStep >= 3}>
+                          Next
+                        </button>
+                      </div>
+                      <div className="row">
+                        <button onClick={validateSetupDraft} disabled={setupLoading}>
+                          Validate
+                        </button>
+                        <button onClick={saveSetupDraft} disabled={setupSaving}>
+                          {setupSaving ? 'Saving...' : 'Save'}
+                        </button>
+                      </div>
+                      {setupErrors.length ? (
+                        <div className="section-block">
+                          <h3>Errors</h3>
+                          <ul>
+                            {setupErrors.map((err) => <li key={err}>{err}</li>)}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {setupWarnings.length ? (
+                        <div className="section-block">
+                          <h3>Warnings</h3>
+                          <ul>
+                            {setupWarnings.map((warn) => <li key={warn}>{warn}</li>)}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {setupMessage ? <p className="muted">{setupMessage}</p> : null}
+                    </section>
+                  ) : null}
 
-            {waterFx ? (
-              <path
-                d={`M250 154 C292 ${150 + Math.sin(playbackMs / 380) * 5}, 362 ${159 + Math.cos(playbackMs / 430) * 6}, 404 153`}
-                stroke="#93c5fd"
-                strokeWidth="2"
-                fill="none"
-                opacity={0.75}
-              />
-            ) : null}
+                  <section className="section-block voice-panel">
+                    <h3>Voice</h3>
+                    <label htmlFor="voice-engine">Engine</label>
+                    <select id="voice-engine" value={ttsEngine} onChange={(e) => setTtsEngine(e.target.value)}>
+                      <option value="auto">auto</option>
+                      <option value="piper">piper</option>
+                      <option value="espeak">espeak</option>
+                      <option value="openai-compatible">openai-compatible</option>
+                      <option value="tone-fallback">tone-fallback</option>
+                    </select>
+                    <label htmlFor="voice-policy">Voice policy</label>
+                    <select id="voice-policy" value={voicePolicy} onChange={(e) => setVoicePolicy(e.target.value as VoicePolicy)}>
+                      <option value="prefer-backend">Prefer backend voice (fall back to browser)</option>
+                      <option value="prefer-browser">Prefer browser voice (fall back to backend)</option>
+                      <option value="strict-backend">Strict backend (fail if backend voice missing)</option>
+                      <option value="browser-only">Browser only</option>
+                    </select>
+                    <label htmlFor="voice-browser">Browser voice</label>
+                    <input
+                      id="voice-browser"
+                      placeholder="e.g. Microsoft Aria"
+                      value={browserVoice}
+                      onChange={(e) => setBrowserVoice(e.target.value)}
+                    />
+                    <button onClick={() => speakInBrowser(text || prompt)} disabled={!browserSpeechSupported || browserSpeaking}>
+                      {browserSpeaking ? 'Speaking...' : 'Play in browser'}
+                    </button>
+                  </section>
 
-            {actorEntries.map(([id, actor]) => {
-              const x = actor.x ?? 140
-              const y = actor.y ?? 170
-              const actorStyle = (actor.style || {}) as Record<string, unknown>
+                  <section className="section-block">
+                    <h3>LLM + Routing</h3>
+                    <label htmlFor="llm-provider">LLM provider</label>
+                    <select
+                      id="llm-provider"
+                      value={llmProvider}
+                      onChange={(e) => setLlmProvider(e.target.value as LlmProvider)}
+                    >
+                      <option value="heuristic">heuristic</option>
+                      <option value="ollama">ollama</option>
+                      <option value="openai-compatible">openai-compatible</option>
+                      <option value="codex-cli">codex-cli</option>
+                      <option value="openclaw-cli">openclaw-cli</option>
+                      <option value="openclaw-openai">openclaw-openai</option>
+                    </select>
+                    <label htmlFor="llm-model">Model</label>
+                    <input id="llm-model" value={llmModel} onChange={(e) => setLlmModel(e.target.value)} placeholder="Optional override" />
+                    <label htmlFor="gateway-url">Gateway URL</label>
+                    <input id="gateway-url" value={gateway} onChange={(e) => setGateway(e.target.value)} />
+                    <label htmlFor="orchestrator-url">Orchestrator URL</label>
+                    <input id="orchestrator-url" value={orchestrator} onChange={(e) => setOrchestrator(e.target.value)} />
+                  </section>
 
-              if (actor.type === 'character') {
-                return (
-                  <g key={id}>
-                    <circle cx={x} cy={y - 18} r="18" fill="#f59e0b" />
-                    <rect x={x - 16} y={y} width="32" height="54" fill="#fef3c7" rx="8" />
-                    {actor.animation?.name === 'moonwalk' ? (
-                      <text x={x - 30} y={y + 74} fill="#fde68a" fontSize="11">moonwalk</text>
-                    ) : null}
-                  </g>
-                )
-              }
+                  <section className="section-block">
+                    <h3>Auth</h3>
+                    <label htmlFor="api-key">Gateway API key</label>
+                    <input id="api-key" value={gatewayApiKey} onChange={(e) => setGatewayApiKey(e.target.value)} />
+                    <label htmlFor="runtime-api-key">Runtime API key</label>
+                    <input id="runtime-api-key" value={runtimeApiKey} onChange={(e) => setRuntimeApiKey(e.target.value)} />
+                  </section>
 
-              if (actor.type === 'globe') {
-                if (renderMode === '3d') {
-                  return (
-                    <g key={id} filter="url(#shadow3d)">
-                      <circle cx={x} cy={y} r="36" fill="#3b82f6" />
-                      <circle cx={x} cy={y} r="36" fill="url(#sphere-highlight)" />
-                      <ellipse cx={x} cy={y} rx="36" ry="12" fill="none" stroke="#60a5fa44" strokeWidth="1.5" />
-                      <ellipse cx={x} cy={y} rx="12" ry="36" fill="none" stroke="#60a5fa44" strokeWidth="1.5" />
-                      <ellipse cx={x} cy={y + 40} rx="28" ry="5" fill="#00000044" />
-                    </g>
-                  )
-                }
-                return <circle key={id} cx={x} cy={y} r="36" fill="#3b82f6" />
-              }
+                  <section className="section-block">
+                    <h3>Run Queue</h3>
+                    <div className="row">
+                      <button onClick={refreshRuns} disabled={runActionLoading}>Refresh</button>
+                      <button onClick={createRun} disabled={runActionLoading}>New run</button>
+                      <button onClick={enqueueToRun} disabled={runActionLoading || !selectedRunId}>Enqueue prompt</button>
+                    </div>
+                    <select value={selectedRunId} onChange={(e) => setSelectedRunId(e.target.value)}>
+                      <option value="">Select run…</option>
+                      {runs.map((run) => (
+                        <option key={run.run_id} value={run.run_id}>{run.label || run.run_id}</option>
+                      ))}
+                    </select>
+                    <textarea
+                      value={queuedPrompt}
+                      onChange={(e) => setQueuedPrompt(e.target.value)}
+                      rows={3}
+                      placeholder="Prompt to enqueue"
+                    />
+                  </section>
 
-              if (actor.type === 'ufo') {
-                return (
-                  <g key={id}>
-                    <ellipse cx={x || 470} cy={y || 95} rx="30" ry="12" fill="#cbd5e1" />
-                    <ellipse cx={x || 470} cy={(y || 95) - 4} rx="12" ry="8" fill="#93c5fd" />
-                    {describeMotion(actor).includes('landing') ? (
-                      <path d={`M${(x || 470) - 10},${(y || 95) + 12} L${x || 470},${(y || 95) + 55} L${(x || 470) + 10},${(y || 95) + 12}`} fill="#fef08a66" />
-                    ) : null}
-                  </g>
-                )
-              }
-
-              if (actor.type === 'bowl') {
-                const bowlShape = styleString(actorStyle, 'shape', 'round')
-                if (bowlShape === 'square') {
-                  return (
-                    <g key={id} filter={renderMode === '3d' ? 'url(#shadow3d-lg)' : undefined}>
-                      <rect x={x - 92} y={y - 82} width="184" height="164" rx="18" fill={renderMode === '3d' ? '#dbeafe55' : '#bfdbfe44'} />
-                      <rect x={x - 92} y={y - 82} width="184" height="164" rx="18" fill="none" stroke="#e0f2fe" strokeWidth={renderMode === '3d' ? 3 : 5} />
-                      {renderMode === '3d' ? <rect x={x - 92} y={y - 82} width="184" height="164" rx="18" fill="url(#sphere-highlight)" /> : null}
-                      <rect x={x - 72} y={y - 66} width="144" height="14" rx="6" fill="#93c5fd55" />
-                      <ellipse cx={x} cy={y + 92} rx="110" ry={renderMode === '3d' ? 22 : 18} fill={renderMode === '3d' ? '#0f172a77' : '#0f172a55'} />
-                    </g>
-                  )
-                }
-                return (
-                  <g key={id} filter={renderMode === '3d' ? 'url(#shadow3d-lg)' : undefined}>
-                    <ellipse cx={x} cy={y + 46} rx="118" ry={renderMode === '3d' ? 22 : 18} fill={renderMode === '3d' ? '#0f172a77' : '#0f172a55'} />
-                    <ellipse cx={x} cy={y} rx="94" ry="86" fill={renderMode === '3d' ? '#dbeafe55' : '#bfdbfe44'} />
-                    <ellipse cx={x} cy={y - 1} rx="94" ry="86" fill="none" stroke="#e0f2fe" strokeWidth={renderMode === '3d' ? 3 : 5} />
-                    {renderMode === '3d' ? <ellipse cx={x} cy={y} rx="94" ry="86" fill="url(#sphere-highlight)" /> : null}
-                    <ellipse cx={x} cy={y - 54} rx="66" ry="13" fill="#93c5fd55" />
-                  </g>
-                )
-              }
-
-              if (actor.type === 'fish') {
-                const pos = actorPathPosition(actor, playbackMs, 310, 205)
-                const fishFill = styleString(actorStyle, 'fill', '#f59e0b')
-                const fishTail = styleString(actorStyle, 'tail', fishFill)
-                if (renderMode === '3d') {
-                  return (
-                    <g key={id} filter="url(#shadow3d)">
-                      <ellipse cx={pos.x} cy={pos.y} rx="26" ry="15" fill={fishFill} />
-                      <ellipse cx={pos.x} cy={pos.y} rx="26" ry="15" fill="url(#sphere-highlight)" />
-                      <polygon points={`${pos.x - 24},${pos.y} ${pos.x - 44},${pos.y - 13} ${pos.x - 44},${pos.y + 13}`} fill={fishTail} />
-                      <circle cx={pos.x + 12} cy={pos.y - 4} r="3" fill="#111827" />
-                      <circle cx={pos.x + 11} cy={pos.y - 5} r="1.2" fill="#ffffff" />
-                      <ellipse cx={pos.x} cy={pos.y + 18} rx="18" ry="3" fill="#00000033" />
-                    </g>
-                  )
-                }
-                return (
-                  <g key={id}>
-                    <ellipse cx={pos.x} cy={pos.y} rx="24" ry="13" fill={fishFill} />
-                    <polygon points={`${pos.x - 23},${pos.y} ${pos.x - 41},${pos.y - 11} ${pos.x - 41},${pos.y + 11}`} fill={fishTail} />
-                    <circle cx={pos.x + 11} cy={pos.y - 3} r="2.4" fill="#111827" />
-                  </g>
-                )
-              }
-
-              if (actor.type === 'cow') {
-                const pos = actorPathPosition(actor, playbackMs, x, y)
-                return (
-                  <g key={id}>
-                    <rect x={pos.x - 34} y={pos.y - 20} width="68" height="38" fill="#f8fafc" rx="10" />
-                    <circle cx={pos.x + 25} cy={pos.y - 14} r="12" fill="#f8fafc" />
-                    <circle cx={pos.x + 18} cy={pos.y - 14} r="2" fill="#111827" />
-                    <circle cx={pos.x + 28} cy={pos.y - 14} r="2" fill="#111827" />
-                    <rect x={pos.x - 30} y={pos.y + 15} width="8" height="18" fill="#f8fafc" rx="2" />
-                    <rect x={pos.x - 10} y={pos.y + 15} width="8" height="18" fill="#f8fafc" rx="2" />
-                    <rect x={pos.x + 10} y={pos.y + 15} width="8" height="18" fill="#f8fafc" rx="2" />
-                    <rect x={pos.x + 26} y={pos.y + 15} width="8" height="18" fill="#f8fafc" rx="2" />
-                  </g>
-                )
-              }
-
-              if (actor.type === 'moon') {
-                return (
-                  <g key={id}>
-                    <circle cx={x} cy={y} r="34" fill="#fef3c7" />
-                    <circle cx={x + 10} cy={y - 8} r="6" fill="#fde68a" />
-                    <circle cx={x - 12} cy={y + 10} r="5" fill="#fde68a" />
-                  </g>
-                )
-              }
-
-              if (actor.type === 'plant') {
-                const sway = actor.animation?.name === 'sway' ? Math.sin(playbackMs / 420) * 7 : 0
-                return (
-                  <g key={id}>
-                    <path d={`M${x},${y} C${x - 10 + sway},${y - 38} ${x + 16 + sway},${y - 74} ${x + 2 + sway},${y - 116}`} stroke="#4ade80" strokeWidth="4" fill="none" />
-                    <path d={`M${x + 4},${y - 8} C${x + 10 + sway},${y - 42} ${x - 8 + sway},${y - 76} ${x + 10 + sway},${y - 110}`} stroke="#22c55e" strokeWidth="3" fill="none" />
-                  </g>
-                )
-              }
-
-              if (actor.type === 'box' || actor.type === 'square' || actor.type === 'rectangle') {
-                const pos = actorPathPosition(actor, playbackMs, x, y)
-                const width = styleNumber(actorStyle, 'width', actor.type === 'rectangle' ? 140 : 96)
-                const height = styleNumber(actorStyle, 'height', actor.type === 'rectangle' ? 84 : width)
-                const fill = styleString(actorStyle, 'fill', '#22d3ee')
-                const stroke = styleString(actorStyle, 'stroke', '#e2e8f0')
-                const lineWidth = styleNumber(actorStyle, 'line_width', 4)
-                if (renderMode === '3d') {
-                  const d = 18
-                  const lx = pos.x - width / 2
-                  const ly = pos.y - height / 2
-                  return (
-                    <g key={id} filter="url(#shadow3d)">
-                      {/* right face */}
-                      <polygon
-                        points={`${lx + width},${ly} ${lx + width + d},${ly - d} ${lx + width + d},${ly - d + height} ${lx + width},${ly + height}`}
-                        fill={fill}
-                        opacity={0.55}
-                      />
+                  <section className="section-block">
+                    <h3>Artifacts</h3>
+                    <div className="row">
+                      <button onClick={loadArtifacts}>Load saved</button>
+                      <button onClick={deleteArtifacts}>Delete all</button>
+                    </div>
+                    <div className="artifact-table" role="grid" aria-label="Saved artifacts">
+                      {results.length ? (
+                        results.map((row) => (
+                          <div key={row.id} className={`artifact-row ${row.id === selectedArtifactId ? 'selected' : ''}`}>
+                            <button
+                              className="artifact-title"
+                              onClick={() => selectArtifact(row.id)}
+                              aria-label={`Load artifact ${row.title || row.id}`}
+                            >
+                              <span className="artifact-name">{row.title || row.id}</span>
+                              {row.created_at ? (
+                                <span className="artifact-meta">{new Date(row.created_at).toLocaleString()}</span>
+                              ) : null}
+                            </button>
+                            <div className="artifact-actions">
+                              <button onClick={() => playArtifact(row)} title="Play">
+                                ▶
+                              </button>
+                              <button onClick={() => deleteArtifact(row.id)} title="Delete">🗑</button>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="muted">No artifacts saved.</p>
+                      )}
+                    </div>
+                  </section>
+                </div>
+              ) : null}
+            </aside>
+          </main>
                       {/* top face */}
                       <polygon
                         points={`${lx},${ly} ${lx + d},${ly - d} ${lx + width + d},${ly - d} ${lx + width},${ly}`}
