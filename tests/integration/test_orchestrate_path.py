@@ -102,6 +102,8 @@ def test_orchestrate_draw_fish_prompt_generates_fish_actor_and_no_dot_fallback()
 
 
 def test_orchestrate_draw_unknown_prompt_uses_palette_script_and_compiles_to_primitives() -> None:
+    # "draw a rocket with motion" now routes to entity decomposition (not seeded palette script),
+    # producing named shape actors (e.g. rocket_body, rocket_nose_cone) and a motion patch.
     c = TestClient(app)
     res = c.post(
         "/v1/orchestrate",
@@ -117,5 +119,6 @@ def test_orchestrate_draw_unknown_prompt_uses_palette_script_and_compiles_to_pri
 
     patches = compile_brush_batch(payload["visual_strokes"])
     actor_paths = {row["path"] for row in patches if str(row.get("path", "")).startswith("/actors/")}
-    assert any(path.endswith("_sketch") for path in actor_paths)
+    # Entity decomposition route: actor paths exist (any name, not restricted to _sketch)
+    assert actor_paths, "Expected compiled actor paths from entity decomposition"
     assert any(path.endswith("/motion") for path in {row["path"] for row in patches})

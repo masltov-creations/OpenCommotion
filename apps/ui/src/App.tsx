@@ -1514,6 +1514,66 @@ export default function App() {
                 return <polygon key={id} points={polygonPoints} fill={fill} stroke={stroke} strokeWidth={lineWidth} />
               }
 
+              if (actor.type === 'rect') {
+                const pos = actorPathPosition(actor, playbackMs, x, y)
+                const width = styleNumber(actorStyle, 'width', 80)
+                const height = styleNumber(actorStyle, 'height', 50)
+                const fill = styleString(actorStyle, 'fill', '#22d3ee')
+                const stroke = styleString(actorStyle, 'stroke', '#e2e8f0')
+                const lineWidth = styleNumber(actorStyle, 'line_width', 2)
+                if (renderMode === '3d') {
+                  const d = Math.round(Math.min(width, height) * 0.16)
+                  return (
+                    <g key={id} filter="url(#shadow3d)">
+                      <polygon
+                        points={`${pos.x + width},${pos.y} ${pos.x + width + d},${pos.y - d} ${pos.x + width + d},${pos.y - d + height} ${pos.x + width},${pos.y + height}`}
+                        fill={fill} opacity={0.55}
+                      />
+                      <polygon
+                        points={`${pos.x},${pos.y} ${pos.x + d},${pos.y - d} ${pos.x + width + d},${pos.y - d} ${pos.x + width},${pos.y}`}
+                        fill={fill} opacity={0.75}
+                      />
+                      <rect x={pos.x} y={pos.y} width={width} height={height} fill={fill} stroke={stroke} strokeWidth={lineWidth} rx={3} />
+                      <rect x={pos.x} y={pos.y} width={width} height={height} fill="url(#cube-face-right)" rx={3} />
+                    </g>
+                  )
+                }
+                return <rect key={id} x={pos.x} y={pos.y} width={width} height={height} fill={fill} stroke={stroke} strokeWidth={lineWidth} rx={3} />
+              }
+
+              if (actor.type === 'ellipse') {
+                const pos = actorPathPosition(actor, playbackMs, x, y)
+                const rx = styleNumber(actorStyle, 'rx', 50)
+                const ry = styleNumber(actorStyle, 'ry', 30)
+                const fill = styleString(actorStyle, 'fill', '#22d3ee')
+                const stroke = styleString(actorStyle, 'stroke', '#e2e8f0')
+                const lineWidth = styleNumber(actorStyle, 'line_width', 2)
+                const fillAttr = fill === 'none' ? 'none' : fill
+                if (renderMode === '3d') {
+                  return (
+                    <g key={id} filter="url(#shadow3d)">
+                      <ellipse cx={pos.x} cy={pos.y} rx={rx} ry={ry} fill={fillAttr} stroke={stroke} strokeWidth={lineWidth} />
+                      {fillAttr !== 'none' ? <ellipse cx={pos.x} cy={pos.y} rx={rx} ry={ry} fill="url(#sphere-highlight)" /> : null}
+                      <ellipse cx={pos.x} cy={pos.y + ry + 5} rx={rx * 0.75} ry={4} fill="#00000033" />
+                    </g>
+                  )
+                }
+                return <ellipse key={id} cx={pos.x} cy={pos.y} rx={rx} ry={ry} fill={fillAttr} stroke={stroke} strokeWidth={lineWidth} />
+              }
+
+              if (actor.type === 'text') {
+                const textContent = styleString(actorStyle, 'text', '')
+                const fill = styleString(actorStyle, 'fill', '#f8fafc')
+                const fontSize = styleNumber(actorStyle, 'font_size', 16)
+                const anchor = styleString(actorStyle, 'anchor', 'middle') as 'start' | 'middle' | 'end'
+                if (!textContent) return null
+                return (
+                  <text key={id} x={x} y={y} fill={fill} fontSize={fontSize} textAnchor={anchor} dominantBaseline="middle">
+                    {textContent}
+                  </text>
+                )
+              }
+
               return null
             })}
 

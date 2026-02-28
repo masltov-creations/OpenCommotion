@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from services.agents.text.adapters import AdapterError, build_adapters
+from services.protocol import ProtocolValidationError, ProtocolValidator
 
 LLM_PROVIDER_ENV = "OPENCOMMOTION_LLM_PROVIDER"
 LLM_MODEL_ENV = "OPENCOMMOTION_LLM_MODEL"
@@ -14,6 +15,7 @@ LLM_TIMEOUT_ENV = "OPENCOMMOTION_LLM_TIMEOUT_S"
 PROMPT_REWRITE_ENABLED_ENV = "OPENCOMMOTION_PROMPT_REWRITE_ENABLED"
 PROMPT_REWRITE_MAX_CHARS_ENV = "OPENCOMMOTION_PROMPT_REWRITE_MAX_CHARS"
 NARRATION_CONTEXT_ENABLED_ENV = "OPENCOMMOTION_NARRATION_CONTEXT_ENABLED"
+REWRITE_SCHEMA_PATH = "types/scene_intent_rewrite_v1.schema.json"
 
 VALID_PROVIDERS = {
     "heuristic",
@@ -44,6 +46,8 @@ NON_ACTIONABLE_HINTS = (
     "need more details",
     "insufficient information",
 )
+
+protocol_validator = ProtocolValidator()
 
 
 @dataclass
@@ -358,17 +362,22 @@ def _parse_rewrite_response(raw: str, fallback: str) -> tuple[str, bool]:
         except json.JSONDecodeError:
             payload = None
         if isinstance(payload, dict):
-            candidate_prompt = str(payload.get("visual_prompt", "")).strip()
-            raw_scene_request = str(payload.get("scene_request", "")).strip().lower()
-            scene_request = raw_scene_request in {"yes", "true", "1"}
-            if candidate_prompt:
-                candidate_prompt = candidate_prompt.strip("`\"' ")
-                candidate_prompt = " ".join(candidate_prompt.split())
-                if candidate_prompt and not _looks_like_clarification_request(candidate_prompt):
-                    limit = _rewrite_max_chars()
-                    if len(candidate_prompt) > limit:
-                        candidate_prompt = candidate_prompt[:limit].rstrip()
-                    return candidate_prompt, scene_request
+            try:
+                protocol_validator.validate(REWRITE_SCHEMA_PATH, payload)
+            except ProtocolValidationError:
+                payload = None
+            if isinstance(payload, dict):
+                candidate_prompt = str(payload.get("visual_prompt", "")).strip()
+                raw_scene_request = str(payload.get("scene_request", "")).strip().lower()
+                scene_request = raw_scene_request in {"yes", "true", "1"}
+                if candidate_prompt:
+                    candidate_prompt = candidate_prompt.strip("`\"' ")
+                    candidate_prompt = " ".join(candidate_prompt.split())
+                    if candidate_prompt and not _looks_like_clarification_request(candidate_prompt):
+                        limit = _rewrite_max_chars()
+                        if len(candidate_prompt) > limit:
+                            candidate_prompt = candidate_prompt[:limit].rstrip()
+                        return candidate_prompt, scene_request
 
     for line in clean.split("\n"):
         row = line.strip()
@@ -389,6 +398,8 @@ def _parse_rewrite_response(raw: str, fallback: str) -> tuple[str, bool]:
         candidate = candidate.split(":", 1)[1].strip()
     candidate = candidate.strip("`\"' ")
     candidate = " ".join(candidate.split())
+    if candidate.startswith("{") and candidate.endswith("}"):
+        return fallback, scene_request
     if not candidate or _looks_like_clarification_request(candidate):
         return fallback, scene_request
     limit = _rewrite_max_chars()

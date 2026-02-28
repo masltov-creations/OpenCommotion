@@ -300,6 +300,100 @@ def _compile_screen_script(params: dict[str, Any], start_ms: int) -> list[dict[s
                 )
             continue
 
+        if op == "rect":
+            point = _coerce_script_point(
+                command.get("point", [command.get("x", 180), command.get("y", 180), command.get("z", 0)]),
+                relative=relative,
+            )
+            if point is None:
+                continue
+            style = {
+                "fill": str(command.get("fill", command.get("color", "#22d3ee"))),
+                "stroke": str(command.get("stroke", "#e2e8f0")),
+                "line_width": max(1, _int(command.get("line_width", 2), 2)),
+                "width": max(1, _int(command.get("width", 60), 60)),
+                "height": max(1, _int(command.get("height", 40), 40)),
+                "z": point[2],
+            }
+            patches.append(
+                {
+                    "op": "add",
+                    "path": f"/actors/{actor_id}",
+                    "value": {
+                        "type": "rect",
+                        "x": point[0],
+                        "y": point[1],
+                        "style": style,
+                    },
+                    "at_ms": command_at_ms,
+                }
+            )
+            continue
+
+        if op == "ellipse":
+            point = _coerce_script_point(
+                command.get("point", [command.get("cx", command.get("x", 180)), command.get("cy", command.get("y", 180)), command.get("z", 0)]),
+                relative=relative,
+            )
+            if point is None:
+                continue
+            # "fill": "none" is valid SVG — allow the literal string "none"
+            fill_raw = command.get("fill", command.get("color", "#22d3ee"))
+            style = {
+                "fill": str(fill_raw) if fill_raw else "#22d3ee",
+                "stroke": str(command.get("stroke", "#e2e8f0")),
+                "line_width": max(1, _int(command.get("line_width", 2), 2)),
+                "rx": max(1, _int(command.get("rx", command.get("r", 40)), 40)),
+                "ry": max(1, _int(command.get("ry", command.get("r", 26)), 26)),
+                "z": point[2],
+            }
+            patches.append(
+                {
+                    "op": "add",
+                    "path": f"/actors/{actor_id}",
+                    "value": {
+                        "type": "ellipse",
+                        "x": point[0],
+                        "y": point[1],
+                        "style": style,
+                    },
+                    "at_ms": command_at_ms,
+                }
+            )
+            continue
+
+        if op == "text":
+            point = _coerce_script_point(
+                command.get("point", [command.get("x", 180), command.get("y", 180), command.get("z", 0)]),
+                relative=relative,
+            )
+            if point is None:
+                continue
+            text_content = str(command.get("text", "")).strip()
+            if not text_content:
+                continue
+            style = {
+                "fill": str(command.get("fill", command.get("color", "#f8fafc"))),
+                "font_size": max(8, _int(command.get("font_size", command.get("size", 16)), 16)),
+                "anchor": str(command.get("anchor", command.get("text_anchor", "middle"))),
+                "text": text_content,
+                "z": point[2],
+            }
+            patches.append(
+                {
+                    "op": "add",
+                    "path": f"/actors/{actor_id}",
+                    "value": {
+                        "type": "text",
+                        "x": point[0],
+                        "y": point[1],
+                        "style": style,
+                    },
+                    "at_ms": command_at_ms,
+                }
+            )
+            continue
+
         patches.append(
             {
                 "op": "add",
