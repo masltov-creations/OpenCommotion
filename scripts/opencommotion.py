@@ -25,6 +25,8 @@ PIPER_CONFIG_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/
 PIPER_BIN_REL = Path("runtime/tools/piper/piper/piper.exe")
 PIPER_MODEL_REL = Path("data/models/piper/en_US-lessac-high.onnx")
 PIPER_CONFIG_REL = Path("data/models/piper/en_US-lessac-high.onnx.json")
+WINDOWS_FIREWALL_PORTS = (8000, 8001, 8010, 8011, 5173)
+WINDOWS_FIREWALL_RULE_PREFIX = "OpenCommotion"
 COMMANDS = [
     "install",
     "setup",
@@ -909,6 +911,40 @@ def _tool_exists(name: str) -> bool:
     return shutil.which(name) is not None
 
 
+def _remove_windows_firewall_rules() -> None:
+    if os.name != "nt":
+        return
+    rule_names = [f"{WINDOWS_FIREWALL_RULE_PREFIX}-{port}" for port in WINDOWS_FIREWALL_PORTS]
+    ps_cmd = (
+        "$names=@(" + ",".join(f"'{name}'" for name in rule_names) + ");"
+        "$rules = Get-NetFirewallRule -ErrorAction SilentlyContinue | "
+        "Where-Object { $names -contains $_.DisplayName };"
+        "if ($rules) { "
+        "  $rules | Remove-NetFirewallRule -ErrorAction SilentlyContinue | Out-Null; "
+        "  Write-Output ('firewall-removed:' + ($rules.DisplayName -join ',')) "
+        "} else { "
+        "  Write-Output 'firewall-none' "
+        "}"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command", ps_cmd],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except Exception:  # noqa: BLE001
+        return
+
+    stdout = (result.stdout or "").strip()
+    stderr = (result.stderr or "").strip()
+    if stdout:
+        for line in stdout.splitlines():
+            print(line.strip())
+    if result.returncode != 0 and stderr and not stdout:
+        print(f"Firewall: could not remove Windows rules ({stderr}).")
+
+
 def cmd_doctor() -> int:
     checks: list[tuple[str, bool, str]] = []
     checks.append(("python3", _tool_exists("python3"), "required"))
@@ -1032,6 +1068,8 @@ def cmd_uninstall() -> int:
                 print("Removed ~/.local/bin from Windows user PATH (restart PowerShell to take effect).")
         except Exception:  # noqa: BLE001
             pass
+
+        _remove_windows_firewall_rules()
 
     for item in removed:
         print(f"  removed : {item}")

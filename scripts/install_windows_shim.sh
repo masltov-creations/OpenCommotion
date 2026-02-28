@@ -13,7 +13,10 @@ fi
 
 PS_SCRIPT="$(mktemp /tmp/opencommotion-shim-XXXXXX.ps1)"
 cat >"$PS_SCRIPT" <<'PS1'
-param([string]$WslRoot)
+param(
+  [string]$WslRoot,
+  [string]$ApplyFirewall = "ask"
+)
 $ErrorActionPreference = "Stop"
 if ([string]::IsNullOrWhiteSpace($WslRoot)) {
   throw "Missing WSL root path"
@@ -41,22 +44,43 @@ if ($userPath -notmatch [Regex]::Escape($targetDir)) {
   Write-Output "Installed Windows launcher: $cmdPath"
 }
 
-# Add Windows Firewall inbound allow rules so WSL2 services are reachable from
-# the Windows browser via the WSL2 localhost relay (NAT mode).
-$fwPorts = @(8000, 8001, 8010, 8011, 5173)
-foreach ($p in $fwPorts) {
-  $rule = "OpenCommotion-$p"
-  Remove-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue
+$firewallChoice = if ([string]::IsNullOrWhiteSpace($ApplyFirewall)) { "ask" } else { $ApplyFirewall.Trim().ToLowerInvariant() }
+if ($firewallChoice -eq "ask") {
+  $firewallChoice = "no"
   try {
-    New-NetFirewallRule -DisplayName $rule -Direction Inbound -Protocol TCP `
-      -LocalPort $p -Action Allow -Profile Any | Out-Null
-    Write-Output "Firewall: allowed inbound TCP $p"
+    $interactive = ($Host.Name -eq "ConsoleHost") -and [Environment]::UserInteractive
+    if ($interactive) {
+      $answer = Read-Host "Allow Windows inbound firewall rules for OpenCommotion ports (only needed to reach services from Windows/external networks)? [y/N]"
+      if ($answer -and $answer.Trim().ToLowerInvariant() -in @("y", "yes")) {
+        $firewallChoice = "yes"
+      }
+    } else {
+      Write-Output "Firewall: skipped (non-interactive; only needed for external access)."
+    }
   } catch {
-    Write-Output "Firewall: could not add rule for port $p (may need admin) - $_"
+    Write-Output "Firewall: skipped (prompt unavailable; only needed for external access)."
   }
+}
+
+# Add Windows Firewall inbound allow rules so WSL2 services are reachable from
+# Windows or other devices only when requested. Rules remain Private,Domain scoped.
+if ($firewallChoice -eq "yes") {
+  $fwPorts = @(8000, 8001, 8010, 8011, 5173)
+  $fwScript = '$ports=@(' + ($fwPorts -join ',') + ');foreach($p in $ports){$r="OpenCommotion-$p";Remove-NetFirewallRule -DisplayName $r -ErrorAction SilentlyContinue;try{New-NetFirewallRule -DisplayName $r -Direction Inbound -Protocol TCP -LocalPort $p -Action Allow -Profile Private,Domain|Out-Null;Write-Output "Firewall: allowed inbound TCP $p (Private/Domain only)"}catch{Write-Output "Firewall: skipped port $p - $_"}}'
+  try {
+    Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden `
+      -ArgumentList @('-NoProfile', '-Command', $fwScript)
+    Write-Output "Firewall rules applied (Private/Domain only)."
+    Write-Output "Remove later with opencommotion -uninstall or rerun this shim and decline."
+  } catch {
+    Write-Output "Firewall: could not apply rules (requires admin). Run as admin to enable external access from Windows."
+  }
+} else {
+  Write-Output "Firewall: skipped (only required if you expose services beyond WSL)."
 }
 PS1
 
 WINDOWS_PS_SCRIPT="$(wslpath -w "$PS_SCRIPT")"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$WINDOWS_PS_SCRIPT" -WslRoot "$ROOT"
+FIREWALL_CHOICE="${OPENCOMMOTION_WINDOWS_FIREWALL:-ask}"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$WINDOWS_PS_SCRIPT" -WslRoot "$ROOT" -ApplyFirewall "$FIREWALL_CHOICE"
 rm -f "$PS_SCRIPT"
