@@ -16,22 +16,6 @@ Latest verification evidence:
 - `python scripts/prompt_compat_probe.py` against live local services (pass, `required_failures=0`)
 - `python scripts/opencommotion.py fresh-agent-e2e` (pass)
 
-Open issue (not blocking):
-- Windows Firewall rules `OpenCommotion-{8000,8001,8010,8011,5173}` are currently
-  `Profile Any` — they work but allow inbound on public networks.
-  To restrict to Private/Domain only, run from an **elevated PowerShell**:
-  ```powershell
-  $ports = @(8000,8001,8010,8011,5173)
-  foreach ($p in $ports) {
-    $r = "OpenCommotion-$p"
-    Remove-NetFirewallRule -DisplayName $r -ErrorAction SilentlyContinue
-    New-NetFirewallRule -DisplayName $r -Direction Inbound -Protocol TCP `
-      -LocalPort $p -Action Allow -Profile Private,Domain | Out-Null
-    Write-Output "Fixed: $r -> Private,Domain"
-  }
-  ```
-  Future installs handle this automatically via `install_windows_shim.sh` (RunAs elevation, `4801ee6`).
-
 Progress checklist:
 - [x] V2 gateway/orchestrator prompt-context plumbing stabilized
 - [x] Agent runtime manager concurrency hardening and recovery tests
@@ -51,7 +35,7 @@ Progress checklist:
 - [x] Windows Firewall rules added during install (`install_windows_shim.sh`, `Private,Domain`)
 
 Active tasks:
-- None. All streams complete. See open issue above re: existing firewall rule profile.
+- None. All streams complete.
 
 Change log:
 - 2026-02-27: Closed Windows `test-complete` blockers by fixing npm resolution and replacing bash-only orchestration paths with Windows-safe execution.
