@@ -459,10 +459,43 @@ def _run_ui_build_via_node() -> int:
     return 127
 
 
+def _read_dev_ports() -> tuple[int, int]:
+    """Return (gateway_port, orchestrator_port) from runtime/agent-runs/ports.env, or (0, 0)."""
+    ports_file = ROOT / "runtime" / "agent-runs" / "ports.env"
+    if not ports_file.exists():
+        return 0, 0
+    gw, orch = 0, 0
+    for line in ports_file.read_text(encoding="utf-8").splitlines():
+        if line.startswith("GATEWAY_PORT="):
+            try:
+                gw = int(line.split("=", 1)[1])
+            except ValueError:
+                pass
+        elif line.startswith("ORCHESTRATOR_PORT="):
+            try:
+                orch = int(line.split("=", 1)[1])
+            except ValueError:
+                pass
+    return gw, orch
+
+
 def _stack_running() -> bool:
+    # Check production ports (run mode: 8000/8001)
     gateway_ok, _ = _check_url("http://127.0.0.1:8000/health")
     orchestrator_ok, _ = _check_url("http://127.0.0.1:8001/health")
-    return gateway_ok or orchestrator_ok
+    if gateway_ok or orchestrator_ok:
+        return True
+    # Also check dev ports from ports.env (dev mode: typically 8010/8011)
+    gw_port, orch_port = _read_dev_ports()
+    if gw_port and gw_port not in (8000, 8001):
+        ok, _ = _check_url(f"http://127.0.0.1:{gw_port}/health")
+        if ok:
+            return True
+    if orch_port and orch_port not in (8000, 8001):
+        ok, _ = _check_url(f"http://127.0.0.1:{orch_port}/health")
+        if ok:
+            return True
+    return False
 
 
 def _cleanup_generated_git_dist_changes() -> None:
@@ -1011,17 +1044,22 @@ def _check_url(url: str) -> tuple[bool, str]:
 
 def cmd_status() -> int:
     print(f"{_project_identity()} @ {ROOT}")
-    checks = [
-        ("gateway", "http://127.0.0.1:8000/health"),
-        ("orchestrator", "http://127.0.0.1:8001/health"),
-        ("ui", "http://127.0.0.1:8000/"),
+    gw_port, orch_port = _read_dev_ports()
+    checks: list[tuple[str, str]] = [
+        ("gateway (run)",      "http://127.0.0.1:8000/health"),
+        ("orchestrator (run)", "http://127.0.0.1:8001/health"),
+        ("ui (run)",           "http://127.0.0.1:8000/"),
     ]
+    if gw_port and gw_port not in (8000, 8001):
+        checks.append((f"gateway (dev:{gw_port})", f"http://127.0.0.1:{gw_port}/health"))
+    if orch_port and orch_port not in (8000, 8001):
+        checks.append((f"orch (dev:{orch_port})", f"http://127.0.0.1:{orch_port}/health"))
 
     failures = 0
     for label, url in checks:
         ok, detail = _check_url(url)
         state = "ok" if ok else "down"
-        print(f"{label:13} {state:4} {url} ({detail})")
+        print(f"{label:22} {state:4} {url} ({detail})")
         if not ok:
             failures += 1
     return 0 if failures == 0 else 1

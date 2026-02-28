@@ -9,6 +9,8 @@ import { expect, test, type Page } from '@playwright/test'
 import * as path from 'path'
 import * as fs from 'fs'
 
+// Resolved from ports.env by playwright.config.ts; falls back to installed-mode default
+const ORCHESTRATOR_BASE = process.env.PLAYWRIGHT_ORCHESTRATOR_URL ?? 'http://127.0.0.1:8001'
 const OUT_DIR = path.resolve(__dirname, '..', '..', 'docs', 'assets', 'scenes')
 
 async function submitPromptAndWait(page: Page, prompt: string): Promise<void> {
@@ -62,9 +64,7 @@ for (const [label, prompt] of SCENE_PROMPTS) {
 
 test('entity decomposition: rocket API response has move op', async ({ page }) => {
   // Verify via orchestrator API that "draw a rocket with motion" produces a move op
-  const res = await page.request.post('http://127.0.0.1:8001/v1/orchestrate', {
-    data: {
-      session_id: 'screenshot-test-rocket',
+  const res = await page.request.post(`${ORCHESTRATOR_BASE}/v1/orchestrate`, {
       prompt: 'draw a rocket with motion',
     },
   })
@@ -80,7 +80,7 @@ test('entity decomposition: rocket API response has move op', async ({ page }) =
 })
 
 test('entity decomposition: house API response has rect walls', async ({ page }) => {
-  const res = await page.request.post('http://127.0.0.1:8001/v1/orchestrate', {
+  const res = await page.request.post(`${ORCHESTRATOR_BASE}/v1/orchestrate`, {
     data: {
       session_id: 'screenshot-test-house',
       prompt: 'draw a house',
@@ -98,7 +98,7 @@ test('entity decomposition: house API response has rect walls', async ({ page })
 
 test('market growth prompt never produces chart strokes', async ({ page }) => {
   // Pre-canned scenes are fully deleted — market-growth prompt must never return drawAdoptionCurve
-  const res = await page.request.post('http://127.0.0.1:8001/v1/orchestrate', {
+  const res = await page.request.post(`${ORCHESTRATOR_BASE}/v1/orchestrate`, {
     data: {
       session_id: 'screenshot-test-market',
       prompt: 'animated presentation showcasing market growth and increases in segmented attach',
