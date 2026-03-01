@@ -217,6 +217,7 @@ def _provider_probe_version(command: list[str], timeout_s: float) -> tuple[bool,
             capture_output=True,
             text=True,
             timeout=timeout_s,
+            encoding="utf-8",
             check=False,
         )
     except Exception as exc:  # noqa: BLE001

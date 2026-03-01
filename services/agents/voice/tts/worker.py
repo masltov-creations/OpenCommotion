@@ -193,7 +193,7 @@ def _render_with_piper(text: str, output_path: Path, required: bool) -> str | No
         command.extend(["--config", piper_config])
 
     try:
-        completed = subprocess.run(command, input=text, capture_output=True, text=True, check=False)
+        completed = subprocess.run(command, input=text, capture_output=True, text=True, encoding="utf-8", check=False)
     except OSError as exc:
         if required:
             raise VoiceEngineError(engine="piper", message=f"piper synthesis failed: {exc}") from exc
@@ -221,7 +221,7 @@ def _render_with_espeak(text: str, output_path: Path, required: bool) -> str | N
     command.append(text)
 
     try:
-        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+        completed = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", check=False)
     except OSError as exc:
         if required:
             raise VoiceEngineError(engine="espeak", message=f"espeak synthesis failed: {exc}") from exc
@@ -343,7 +343,7 @@ def _render_with_windows_sapi(text: str, output_path: Path, required: bool) -> s
     )
     command = [powershell_bin, "-NoProfile", "-Command", script]
     try:
-        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+        completed = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", check=False)
     except OSError as exc:
         if required:
             raise VoiceEngineError(engine="windows-sapi", message=f"windows sapi synthesis failed: {exc}") from exc
@@ -384,7 +384,7 @@ def _to_windows_path(path: Path) -> str | None:
     if not wslpath_bin:
         return None
     try:
-        completed = subprocess.run([wslpath_bin, "-w", raw], capture_output=True, text=True, check=False)
+        completed = subprocess.run([wslpath_bin, "-w", raw], capture_output=True, text=True, encoding="utf-8", check=False)
     except OSError:
         return None
     if completed.returncode != 0:
