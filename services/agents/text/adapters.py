@@ -94,21 +94,52 @@ def extract_codex_agent_message(stream: str) -> str:
 
 
 def extract_openclaw_text(payload: str) -> str:
-    try:
-        data = json.loads(payload)
-    except json.JSONDecodeError:
-        return ""
-    rows = data.get("payloads")
-    if not isinstance(rows, list):
-        return ""
-    parts: list[str] = []
-    for row in rows:
-        if not isinstance(row, dict):
+    candidates: list[str] = []
+    full = (payload or "").strip()
+    if full:
+        candidates.append(full)
+    for raw in full.splitlines():
+        line = raw.strip()
+        if line.startswith("{") and line.endswith("}"):
+            candidates.append(line)
+
+    for chunk in candidates:
+        try:
+            data = json.loads(chunk)
+        except json.JSONDecodeError:
             continue
-        text = row.get("text")
-        if isinstance(text, str) and text.strip():
-            parts.append(text.strip())
-    return "\n\n".join(parts).strip()
+        rows = data.get("payloads")
+        if not isinstance(rows, list):
+            continue
+        parts: list[str] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            text = row.get("text")
+            if isinstance(text, str) and text.strip():
+                parts.append(text.strip())
+        if parts:
+            return "\n\n".join(parts).strip()
+    return ""
+
+
+def _wsl_openclaw_available() -> bool:
+    if os.name != "nt":
+        return False
+    if not shutil.which("wsl.exe"):
+        return False
+    try:
+        completed = subprocess.run(
+            ["wsl.exe", "bash", "-lc", "command -v openclaw >/dev/null 2>&1 && echo ok"],
+            capture_output=True,
+            text=True,
+            timeout=2.5,
+            encoding="utf-8",
+            check=False,
+        )
+    except Exception:  # noqa: BLE001
+        return False
+    return completed.returncode == 0 and "ok" in (completed.stdout or "")
 
 
 def _timeout_s(value: str, default: float) -> float:
@@ -451,7 +482,21 @@ class OpenClawCliAdapter:
         return os.getenv(OPENCLAW_BIN_ENV, "openclaw").strip() or "openclaw"
 
     def _resolved_bin(self) -> str | None:
-        return _resolve_binary(self._bin())
+        resolved = _resolve_binary(self._bin())
+        if resolved:
+            return resolved
+        if _wsl_openclaw_available():
+            return "wsl:openclaw"
+        return None
+
+    def _command(self, args: list[str]) -> list[str]:
+        binary = self._resolved_bin()
+        if not binary:
+            return []
+        if binary == "wsl:openclaw":
+            inner = "openclaw " + " ".join(args)
+            return ["wsl.exe", "bash", "-lc", inner]
+        return _cli_invocation(binary, args)
 
     def _session_prefix(self) -> str:
         return os.getenv(OPENCLAW_SESSION_PREFIX_ENV, "opencommotion-turn").strip() or "opencommotion-turn"
@@ -460,22 +505,20 @@ class OpenClawCliAdapter:
         return _timeout_s(OPENCLAW_TIMEOUT_ENV, self.timeout_s)
 
     def generate(self, prompt: str, *, system_prompt_override: str | None = None) -> str:
-        binary = self._resolved_bin()
-        if not binary:
-            raise AdapterError(provider=self.name, message=f"{self._bin()} is not installed or not in PATH")
-        session_id = f"{self._session_prefix()}-{uuid4()}"
-        args = [
+        command = self._command([
             "agent",
             "--local",
             "--json",
             "--session-id",
-            session_id,
+            f"{self._session_prefix()}-{uuid4()}",
             "--message",
             "-",
-        ]
+        ])
+        if not command:
+            raise AdapterError(provider=self.name, message=f"{self._bin()} is not installed or not in PATH")
         prompt_payload = f"{system_prompt_override + '\n' if system_prompt_override else ''}{prompt}"
         completed = _run_cli(
-            command=_cli_invocation(binary, args),
+            command=command,
             timeout_s=self._timeout(),
             retries=_cli_retries(),
             provider=self.name,
@@ -497,7 +540,8 @@ class OpenClawCliAdapter:
             "error": "" if binary else "binary_not_found",
         }
         if probe and binary:
-            ok, detail = _provider_probe_version(_cli_invocation(binary, ["--version"]), timeout_s=min(self._timeout(), 5.0))
+            command = ["wsl.exe", "bash", "-lc", "openclaw --version"] if binary == "wsl:openclaw" else _cli_invocation(binary, ["--version"])
+            ok, detail = _provider_probe_version(command, timeout_s=min(self._timeout(), 5.0))
             if ok:
                 state["version"] = detail
             else:

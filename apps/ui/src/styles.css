@@ -677,7 +677,7 @@ button:disabled {
 .studio-layout {
   display: grid;
   grid-template-columns: minmax(720px, 1.75fr) minmax(360px, 1fr);
-  grid-template-rows: minmax(340px, 1fr) auto minmax(220px, 0.9fr);
+  grid-template-rows: minmax(340px, 1fr) minmax(220px, 0.9fr);
   gap: 14px;
   align-items: stretch;
   min-height: calc(100vh - 146px);
@@ -703,7 +703,7 @@ button:disabled {
 
 .studio-log {
   grid-column: 1;
-  grid-row: 3;
+  grid-row: 2;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -711,7 +711,7 @@ button:disabled {
 
 .studio-inspector {
   grid-column: 2;
-  grid-row: 1 / span 3;
+  grid-row: 1 / span 2;
   position: sticky;
   top: 80px;
   min-height: 0;
@@ -853,7 +853,7 @@ button:disabled {
     height: 100%;
     min-height: 0;
     max-height: 100%;
-    grid-template-rows: minmax(320px, 1fr) auto minmax(220px, 0.95fr);
+    grid-template-rows: minmax(320px, 1fr) minmax(220px, 0.95fr);
     overflow: hidden;
   }
 
@@ -1170,7 +1170,7 @@ select {
 
   .studio-layout {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(360px, 1fr) auto minmax(190px, 0.55fr);
+    grid-template-rows: minmax(360px, 1fr) minmax(190px, 0.55fr);
     gap: 16px;
     min-height: 0;
     height: 100%;
@@ -1178,7 +1178,6 @@ select {
   }
 
   .studio-canvas,
-  .studio-composer,
   .studio-log {
     grid-column: 1;
     min-height: 0;
@@ -1949,7 +1948,6 @@ select {
 }
 
 .studio-canvas:hover .visual-canvas,
-.studio-composer:hover,
 .studio-log:hover {
   transform: translateY(-1px);
 }
@@ -2611,4 +2609,204 @@ select:focus {
     gap: 12px;
     padding: 12px;
   }
+}
+
+/* ─── Canvas prompt overlay + phase band ───────────────────────── */
+.studio-canvas .canvas-stage {
+  position: static;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.studio-canvas .canvas-stage .visual-canvas {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: block;
+}
+
+.canvas-composer-overlay {
+  position: relative;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  background: linear-gradient(180deg, rgba(2, 10, 29, 0.8), rgba(2, 6, 23, 0.88));
+  backdrop-filter: blur(6px);
+  display: grid;
+  gap: 10px;
+}
+
+.canvas-composer-overlay .composer-input {
+  flex: 1;
+  min-height: 74px;
+  max-height: 120px;
+  resize: vertical;
+}
+
+.composer-entry {
+  align-items: stretch;
+  gap: 10px;
+}
+
+.composer-entry .composer-input {
+  margin: 0;
+}
+
+.send-btn {
+  min-width: 116px;
+  align-self: stretch;
+  padding-inline: 18px;
+}
+
+.composer-actions {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.status-cluster {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.turn-phase-band-wrap {
+  flex: 0 1 330px;
+  min-width: 220px;
+  max-width: 330px;
+  display: grid;
+  gap: 6px;
+  padding: 6px 9px 7px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.44);
+}
+
+.turn-phase-band {
+  position: relative;
+  padding-top: 3px;
+  padding-inline: 4px;
+}
+
+.turn-phase-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 9px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.35);
+}
+
+.turn-phase-fill {
+  position: absolute;
+  left: 0;
+  top: 9px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(34, 211, 238, 0.95);
+  transition: width 240ms ease;
+}
+
+.turn-phase-steps {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.turn-phase-step {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+
+.turn-phase-step-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.7);
+  border: 1px solid rgba(226, 232, 240, 0.55);
+}
+
+.turn-phase-step-label {
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: 0.015em;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  color: var(--text-subtle);
+}
+
+.turn-phase-step.is-past .turn-phase-step-dot {
+  background: rgba(34, 211, 238, 0.95);
+  border-color: rgba(34, 211, 238, 0.95);
+}
+
+.turn-phase-step.is-active .turn-phase-step-dot {
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.18);
+}
+
+.turn-phase-failed .turn-phase-fill {
+  background: rgba(239, 68, 68, 0.95);
+}
+
+.turn-phase-failed .turn-phase-step.is-past .turn-phase-step-dot,
+.turn-phase-failed .turn-phase-step.is-active .turn-phase-step-dot {
+  background: rgba(239, 68, 68, 0.95);
+  border-color: rgba(248, 113, 113, 0.95);
+}
+
+.turn-phase-meta {
+  margin: 0;
+  font-size: 10px;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 900px) {
+  .composer-entry {
+    flex-wrap: wrap;
+  }
+
+  .send-btn {
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .composer-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .turn-phase-band-wrap {
+    flex: 1 1 auto;
+    min-width: 100%;
+    max-width: none;
+  }
+}
+
+.app-shell.theme-light .canvas-composer-overlay {
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.94), rgba(241, 245, 249, 0.95));
+  border-color: rgba(148, 163, 184, 0.42);
+}
+
+.app-shell.theme-light .turn-phase-track {
+  background: rgba(100, 116, 139, 0.34);
+}
+
+.app-shell.theme-light .turn-phase-band-wrap {
+  background: rgba(255, 255, 255, 0.68);
+  border-color: rgba(100, 116, 139, 0.25);
+}
+
+.app-shell.theme-light .turn-phase-step-label,
+.app-shell.theme-light .turn-phase-meta {
+  color: #334155;
 }

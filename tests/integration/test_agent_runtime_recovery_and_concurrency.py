@@ -9,7 +9,9 @@ from fastapi.testclient import TestClient
 
 from services.artifact_registry.opencommotion_artifacts.registry import ArtifactRegistry
 from services.gateway.app import main as gateway_main
-from services.orchestrator.app.main import app as orchestrator_app
+from services.orchestrator.app import main as orch_main
+from services.agents.text import worker as text_worker
+from services.agents.visual import worker as visual_worker
 
 REAL_ASYNC_CLIENT = httpx.AsyncClient
 
@@ -31,7 +33,7 @@ def _client_with_inprocess_orchestrator(tmp_path, monkeypatch) -> TestClient:
             timeout = kwargs.get("timeout", 20)
             self._client = REAL_ASYNC_CLIENT(
                 timeout=timeout,
-                transport=gateway_main.httpx.ASGITransport(app=orchestrator_app),
+                transport=gateway_main.httpx.ASGITransport(app=orch_main.app),
                 base_url="http://127.0.0.1:8001",
             )
 
@@ -42,9 +44,21 @@ def _client_with_inprocess_orchestrator(tmp_path, monkeypatch) -> TestClient:
         async def __aexit__(self, exc_type, exc_val, exc_tb):
             return await self._client.__aexit__(exc_type, exc_val, exc_tb)
 
-    monkeypatch.setattr(gateway_main.httpx, "AsyncClient", RoutedAsyncClient)
     monkeypatch.setattr(gateway_main, "AGENT_RUN_DB_PATH", tmp_path / "agent_manager.db")
     monkeypatch.setattr(gateway_main, "_run_manager", None)
+
+    # Directly mock the turn execution at the highest level in the gateway.
+    # This ensures the RunManager always sees a successful turn regardless of LLM/Binary state.
+    async def mock_execute_turn(**kwargs):
+        return {
+            "text": "mocked success",
+            "visual_strokes": [],
+            "voice": [],
+            "coherence_report": {"ok": True}
+        }
+
+    monkeypatch.setattr(gateway_main, "_execute_turn", mock_execute_turn)
+
     return TestClient(gateway_main.app)
 
 

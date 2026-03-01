@@ -135,7 +135,8 @@ function parsePositiveMs(rawValue: string | undefined, fallbackMs: number): numb
 }
 
 const viteEnv = (import.meta as { env?: Record<string, string> }).env || {}
-const gateway = viteEnv.VITE_GATEWAY_URL || 'http://127.0.0.1:8000'
+const browserOrigin = typeof window !== 'undefined' ? window.location.origin : ''
+const gateway = viteEnv.VITE_GATEWAY_URL || browserOrigin || 'http://127.0.0.1:8000'
 const wsGateway = gateway.replace(/^http/i, 'ws')
 const gatewayApiKey = viteEnv.VITE_GATEWAY_API_KEY || 'dev-opencommotion-key'
 const orchestrateTimeoutMs = parsePositiveMs(viteEnv.VITE_ORCHESTRATE_TIMEOUT_MS, 120000)
@@ -298,198 +299,99 @@ function normalizeAgentThreadText(raw: string): string {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Turn Pipeline Progress Bar
+// Turn Phase Band
 // ──────────────────────────────────────────────────────────────────────────────
 
-const PIPELINE_NODES: Array<{ id: string; label: string; xPct: number; triggerMs: number }> = [
-  { id: 'route', label: 'Route', xPct: 0.08, triggerMs: 0 },
-  { id: 'llm', label: 'LLM', xPct: 0.31, triggerMs: 1800 },
-  { id: 'scene', label: 'Scene', xPct: 0.56, triggerMs: 28000 },
-  { id: 'voice', label: 'Voice', xPct: 0.79, triggerMs: 50000 },
-  { id: 'done', label: 'Done', xPct: 0.94, triggerMs: 65000 },
+const TURN_PHASES: Array<{ id: string; label: string; triggerMs: number }> = [
+  { id: 'prompt', label: 'Prompt', triggerMs: 0 },
+  { id: 'plan', label: 'Plan', triggerMs: 1400 },
+  { id: 'render', label: 'Render', triggerMs: 9600 },
+  { id: 'narrate', label: 'Narrate', triggerMs: 32000 },
 ]
 
-function getTurnProgressPct(elapsedMs: number): number {
-  // Segment the elapsed time through the node thresholds, map to positional pct
-  const nodes = PIPELINE_NODES
-  for (let i = nodes.length - 1; i >= 1; i--) {
-    const prev = nodes[i - 1]
-    const curr = nodes[i]
-    if (elapsedMs >= prev.triggerMs) {
-      const segMs = curr.triggerMs - prev.triggerMs
-      const segPct = curr.xPct - prev.xPct
-      const t = segMs <= 0 ? 1 : Math.min(1, (elapsedMs - prev.triggerMs) / segMs)
-      // ease-out within each segment
-      const eased = 1 - Math.pow(1 - t, 2)
-      return prev.xPct + eased * segPct
+function getActiveTurnPhase(elapsedMs: number): number {
+  for (let i = TURN_PHASES.length - 1; i >= 0; i--) {
+    if (elapsedMs >= TURN_PHASES[i].triggerMs) {
+      return i
     }
   }
-  return nodes[0].xPct
+  return 0
+}
+
+function getTurnPhaseProgress(elapsedMs: number): number {
+  const phases = TURN_PHASES
+  if (elapsedMs <= phases[0].triggerMs) {
+    return 0
+  }
+  for (let index = phases.length - 1; index >= 0; index--) {
+    const start = phases[index]
+    const end = phases[index + 1]
+    if (!end) {
+      const tailMs = 10000
+      const tailT = Math.min(1, Math.max(0, (elapsedMs - start.triggerMs) / tailMs))
+      return (index + tailT) / (phases.length - 1)
+    }
+    if (elapsedMs >= start.triggerMs && elapsedMs < end.triggerMs) {
+      const seg = end.triggerMs - start.triggerMs
+      const t = seg > 0 ? (elapsedMs - start.triggerMs) / seg : 0
+      return (index + t) / (phases.length - 1)
+    }
+  }
+  return 0
 }
 
 type TurnProgressBarProps = {
   turnState: TurnLifecycleState
   elapsedMs: number
-  activePrompt: string
 }
 
-function TurnProgressBar({ turnState, elapsedMs, activePrompt }: TurnProgressBarProps) {
-  const W = 600
-  const trackY = 32
-  const trackH = 7
-  const trackR = 4
-  const labelY = 58
-
+function TurnProgressBar({ turnState, elapsedMs }: TurnProgressBarProps) {
   const isRunning = turnState === 'running'
   const isCompleted = turnState === 'completed'
   const isFailed = turnState === 'failed'
   const isIdle = turnState === 'idle'
 
-  // Progress 0-1 along the track
-  const pct = isCompleted ? 1 : Math.min(1, getTurnProgressPct(elapsedMs))
-  const fillW = pct * W
-
-  // Dot position
-  const dotX = isCompleted ? PIPELINE_NODES[PIPELINE_NODES.length - 1].xPct * W
-    : isIdle ? -30
-      : pct * W
-
-  const trackFill = isCompleted ? '#22d3ee' : isFailed ? '#ef4444' : '#22d3ee'
-  const dotColor = isFailed ? '#ef4444' : '#22d3ee'
-  const activeNodeIdx = isRunning
-    ? PIPELINE_NODES.findIndex((node, idx) => {
-      const next = PIPELINE_NODES[idx + 1]
-      return elapsedMs >= node.triggerMs && (!next || elapsedMs < next.triggerMs)
-    })
-    : -1
+  const activePhaseIdx = isRunning || isFailed
+    ? getActiveTurnPhase(elapsedMs)
+    : 0
+  const progress = isCompleted
+    ? 1
+    : isIdle
+      ? 0
+      : Math.max(0, Math.min(1, getTurnPhaseProgress(elapsedMs)))
+  const phaseLabel = isFailed ? 'Failed' : (TURN_PHASES[activePhaseIdx]?.label || 'Prompt')
+  const phaseMeta = isRunning || isCompleted
+    ? `${(elapsedMs / 1000).toFixed(1)}s`
+    : isFailed
+      ? 'retry'
+      : 'ready'
 
   return (
-    <div className={`turn-pipeline-wrap turn-pipeline-${turnState}`} aria-hidden="true">
-      {isRunning && activePrompt ? (
-        <p className="pipeline-prompt-preview">{activePrompt}</p>
-      ) : null}
-      <svg
-        className="turn-pipeline-svg"
-        viewBox={`0 0 ${W} 72`}
-        preserveAspectRatio="none"
-        aria-hidden="true"
-      >
-        <defs>
-          <linearGradient id="shimmer-grad" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor={trackFill} stopOpacity="0.55" />
-            <stop offset="50%" stopColor={trackFill} stopOpacity="1" />
-            <stop offset="100%" stopColor={trackFill} stopOpacity="0.55" />
-          </linearGradient>
-          <filter id="node-glow" x="-60%" y="-60%" width="220%" height="220%">
-            <feGaussianBlur stdDeviation="4" result="blur" />
-            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-          <filter id="dot-glow" x="-100%" y="-100%" width="300%" height="300%">
-            <feGaussianBlur stdDeviation="5" result="blur" />
-            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-          <clipPath id="fill-clip">
-            <rect x="0" y={trackY} width={Math.max(0, fillW)} height={trackH} rx={trackR} ry={trackR} />
-          </clipPath>
-        </defs>
-
-        <rect
-          x="0"
-          y={trackY}
-          width={W}
-          height={trackH}
-          rx={trackR}
-          ry={trackR}
-          fill="rgba(148,163,184,0.22)"
-        />
-
-        {fillW > 0 ? (
-          <rect
-            x="0"
-            y={trackY}
-            width={W}
-            height={trackH}
-            rx={trackR}
-            ry={trackR}
-            fill="url(#shimmer-grad)"
-            clipPath="url(#fill-clip)"
-            className={isRunning ? 'pipeline-track-fill' : undefined}
-          />
-        ) : null}
-
-        {PIPELINE_NODES.map((node, nodeIdx) => {
-          const passed = isCompleted || (!isIdle && elapsedMs >= node.triggerMs)
-          const isCurrent = isRunning && nodeIdx === activeNodeIdx
-          const nodeR = isCurrent ? 11 : 9
-          const nodeFill = isIdle
-            ? 'rgba(30,58,138,0.6)'
-            : passed && isFailed
-              ? '#ef4444'
-              : passed
-                ? '#22d3ee'
-                : 'rgba(30,58,138,0.55)'
-          const nodeStroke = passed ? trackFill : 'rgba(148,163,184,0.3)'
-          const cx = node.xPct * W
-          return (
-            <g key={node.id} filter={isCurrent ? 'url(#node-glow)' : undefined}>
-              <circle
-                cx={cx}
-                cy={trackY + trackH / 2}
-                r={nodeR}
-                fill={nodeFill}
-                stroke={nodeStroke}
-                strokeWidth={isCurrent ? 2.2 : 1.2}
-              />
-              <text
-                x={cx}
-                y={labelY}
-                textAnchor="middle"
-                fill={passed ? 'rgba(226,232,240,0.95)' : 'rgba(148,163,184,0.72)'}
-                fontSize="10"
-                fontFamily="'IBM Plex Mono','SFMono-Regular',Menlo,Consolas,monospace"
-              >
-                {node.label}
-              </text>
-            </g>
-          )
-        })}
-
-        {/* Travelling dot */}
-        {isRunning && dotX >= 0 ? (
-          <circle
-            cx={dotX} cy={trackY + trackH / 2} r={6}
-            fill={dotColor}
-            filter="url(#dot-glow)"
-            className="pipeline-dot-travel"
-          />
-        ) : null}
-
-        {/* Elapsed time */}
-        {isRunning ? (
-          <text
-            x={W / 2} y={72}
-            textAnchor="middle"
-            fill="rgba(148,163,184,0.6)"
-            fontSize="11"
-            fontFamily="'IBM Plex Mono','SFMono-Regular',Menlo,Consolas,monospace"
-          >
-            {(elapsedMs / 1000).toFixed(1)}s
-          </text>
-        ) : null}
-
-        {/* Completed / failed stamp */}
-        {(isCompleted || isFailed) ? (
-          <text
-            x={W / 2} y={72}
-            textAnchor="middle"
-            fill={isCompleted ? '#6ee7b7' : '#fca5a5'}
-            fontSize="11"
-            fontFamily="'IBM Plex Mono','SFMono-Regular',Menlo,Consolas,monospace"
-          >
-            {isCompleted ? `Done · ${(elapsedMs / 1000).toFixed(1)}s` : 'Failed'}
-          </text>
-        ) : null}
-      </svg>
+    <div className={`turn-phase-band-wrap turn-phase-${turnState}`} aria-hidden="true">
+      <div className="turn-phase-band" role="presentation">
+        <div className="turn-phase-track" />
+        <div className="turn-phase-fill" style={{ width: `${Math.round(progress * 100)}%` }} />
+        <div className="turn-phase-steps">
+          {TURN_PHASES.map((phase, index) => {
+            const isActive = index === activePhaseIdx && !isIdle
+            const isPast = isCompleted || (!isIdle && index <= activePhaseIdx)
+            const classes = [
+              'turn-phase-step',
+              isPast ? 'is-past' : '',
+              isActive ? 'is-active' : '',
+            ].filter(Boolean).join(' ')
+            return (
+              <div key={phase.id} className={classes}>
+                <span className="turn-phase-step-dot" />
+                <span className="turn-phase-step-label">{phase.label}</span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+      <p className="turn-phase-meta">
+        {phaseLabel} · {phaseMeta}
+      </p>
     </div>
   )
 }
@@ -1706,6 +1608,7 @@ export default function App() {
             ) : null}
           </div>
 
+          <div className="canvas-stage">
           <svg className="visual-canvas" viewBox="0 0 720 360" aria-label="visual stage">
             <defs>
               <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
@@ -2194,44 +2097,48 @@ export default function App() {
               <text key={`${a.text}-${idx}`} x="24" y={324 - idx * 20} fill="#f8fafc" fontSize="13">{a.text}</text>
             ))}
           </svg>
-        </section>
 
-        <section className="card studio-composer" data-testid="prompt-composer">
-          {/* Accessible status text for e2e tests — visually hidden */}
-          <span
-            className="sr-only"
-            data-testid="turn-status"
-            role="status"
-            aria-live="polite"
-          >
-            {turnStateLabel}
-          </span>
-          <TurnProgressBar
-            turnState={turnState}
-            elapsedMs={turnElapsedMs}
-            activePrompt={activePromptPreview}
-          />
-          <textarea
-            aria-label="prompt input"
-            className="composer-input"
-            rows={3}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !running) {
-                e.preventDefault()
-                void runTurn()
-              }
-            }}
-            placeholder="Describe a scene… (Ctrl+Enter to run)"
-          />
-          <div className="row composer-actions">
-            <button className="run-btn" onClick={runTurn} disabled={running} data-testid="run-turn-btn">
-              {running ? '⏳ Running…' : '▶ Run Turn'}
-            </button>
-            <button onClick={saveArtifact} disabled={!text} title="Save this result as an artifact">Save</button>
+          <section className="canvas-composer-overlay" data-testid="prompt-composer">
+            {/* Accessible status text for e2e tests — visually hidden */}
+            <span
+              className="sr-only"
+              data-testid="turn-status"
+              role="status"
+              aria-live="polite"
+            >
+              {turnStateLabel}
+            </span>
+            <div className="row composer-entry">
+              <textarea
+                aria-label="prompt input"
+                className="composer-input"
+                rows={3}
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !running) {
+                    e.preventDefault()
+                    void runTurn()
+                  }
+                }}
+                placeholder="Describe a scene… (Ctrl+Enter to send)"
+              />
+              <button className="run-btn send-btn" onClick={runTurn} disabled={running} data-testid="run-turn-btn">
+                {running ? 'SENDING…' : 'SEND'}
+              </button>
+            </div>
+            <div className="row composer-actions">
+              <div className="status-cluster">
+                <TurnProgressBar
+                  turnState={turnState}
+                  elapsedMs={turnElapsedMs}
+                />
+              </div>
+              <button onClick={saveArtifact} disabled={!text} title="Save this result as an artifact">Save</button>
+            </div>
+            {lastError ? <p className="error">{lastError}</p> : null}
+          </section>
           </div>
-          {lastError ? <p className="error">{lastError}</p> : null}
         </section>
 
         <section className="card studio-log" data-testid="agent-log-panel">

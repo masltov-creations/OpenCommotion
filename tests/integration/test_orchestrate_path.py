@@ -15,9 +15,8 @@ def test_orchestrate_response_shape() -> None:
     assert 'timeline' in payload
 
 
-def test_orchestrate_fish_and_bubble_prompt_routes_to_script_pipeline() -> None:
+def test_orchestrate_fish_and_bubble_prompt_raises_503_when_llm_unavailable() -> None:
     c = TestClient(app)
-    # Fish/bubble prompts now route through LLM → entity → palette fallback, not pre-canned scenes
     res = c.post(
         "/v1/orchestrate",
         json={
@@ -25,15 +24,11 @@ def test_orchestrate_fish_and_bubble_prompt_routes_to_script_pipeline() -> None:
             "prompt": "fish swimming in a bowl with bubbles",
         },
     )
-    assert res.status_code == 200
-    kinds = {row["kind"] for row in res.json()["visual_strokes"]}
-    assert "runScreenScript" in kinds or "annotateInsight" in kinds
-    # Pre-canned bowl/caustic actors must be absent
-    spawned = [row for row in res.json()["visual_strokes"] if row.get("kind") == "spawnSceneActor"]
-    assert all(row.get("params", {}).get("actor_id") not in {"fish_bowl", "plant_a"} for row in spawned)
+    assert res.status_code == 503
+    assert "llm_engine_unavailable" in res.json()["detail"]["error"]
 
 
-def test_orchestrate_draw_box_prompt_generates_fallback_script() -> None:
+def test_orchestrate_draw_box_prompt_raises_503_when_llm_unavailable() -> None:
     c = TestClient(app)
     res = c.post(
         "/v1/orchestrate",
@@ -42,13 +37,10 @@ def test_orchestrate_draw_box_prompt_generates_fallback_script() -> None:
             "prompt": "draw a box",
         },
     )
-    assert res.status_code == 200
-    kinds = {row["kind"] for row in res.json()["visual_strokes"]}
-    assert "runScreenScript" in kinds
+    assert res.status_code == 503
 
 
-def test_orchestrate_draw_fish_prompt_routes_to_script_pipeline() -> None:
-    # "draw a fish" now routes through LLM/entity/palette — no pre-canned fish actor
+def test_orchestrate_draw_fish_prompt_raises_503_when_llm_unavailable() -> None:
     c = TestClient(app)
     res = c.post(
         "/v1/orchestrate",
@@ -57,15 +49,10 @@ def test_orchestrate_draw_fish_prompt_routes_to_script_pipeline() -> None:
             "prompt": "draw a fish",
         },
     )
-    assert res.status_code == 200
-    kinds = {row["kind"] for row in res.json()["visual_strokes"]}
-    assert "runScreenScript" in kinds
-    # Pre-canned fish_1 actor must not be present
-    spawned = [row for row in res.json()["visual_strokes"] if row.get("kind") == "spawnSceneActor"]
-    assert all(row.get("params", {}).get("actor_id") not in {"fish_1", "goldfish"} for row in spawned)
+    assert res.status_code == 503
 
 
-def test_orchestrate_draw_unknown_prompt_uses_palette_script_and_compiles_to_primitives() -> None:
+def test_orchestrate_draw_unknown_prompt_raises_503_when_llm_unavailable() -> None:
     c = TestClient(app)
     res = c.post(
         "/v1/orchestrate",
@@ -74,11 +61,4 @@ def test_orchestrate_draw_unknown_prompt_uses_palette_script_and_compiles_to_pri
             "prompt": "draw a rocket with motion",
         },
     )
-    assert res.status_code == 200
-    payload = res.json()
-    kinds = {row["kind"] for row in payload["visual_strokes"]}
-    assert "runScreenScript" in kinds
-
-    patches = compile_brush_batch(payload["visual_strokes"])
-    actor_paths = {row["path"] for row in patches if row.get("path")}
-    assert any(path.endswith("/motion") for path in actor_paths)
+    assert res.status_code == 503

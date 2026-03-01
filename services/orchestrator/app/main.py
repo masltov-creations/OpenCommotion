@@ -126,6 +126,7 @@ async def orchestrate(req: OrchestrateRequest) -> dict:
     import asyncio  # noqa: PLC0415
 
     text_error: LLMEngineError | None = None
+    visual_error: LLMEngineError | None = None
 
     def _generate_text() -> str:
         nonlocal text_error
@@ -135,8 +136,16 @@ async def orchestrate(req: OrchestrateRequest) -> dict:
             text_error = exc
             return ""
 
+    def _generate_visual() -> list[dict]:
+        nonlocal visual_error
+        try:
+            return generate_visual_strokes(req.prompt, req.context)
+        except LLMEngineError as exc:
+            visual_error = exc
+            return []
+
     text_task = asyncio.to_thread(_generate_text)
-    visual_task = asyncio.to_thread(generate_visual_strokes, req.prompt, req.context)
+    visual_task = asyncio.to_thread(_generate_visual)
 
     text, strokes = await asyncio.gather(text_task, visual_task)
 
@@ -146,7 +155,16 @@ async def orchestrate(req: OrchestrateRequest) -> dict:
             detail={
                 "error": "llm_engine_unavailable",
                 "provider": text_error.provider,
-                "message": str(text_error),
+                "message": f"Text generation failed: {text_error}",
+            },
+        )
+    if visual_error is not None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "llm_engine_unavailable",
+                "provider": visual_error.provider,
+                "message": f"Visual generation failed: {visual_error}",
             },
         )
 
