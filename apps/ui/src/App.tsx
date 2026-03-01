@@ -1307,8 +1307,8 @@ export default function App() {
         </div>
       </header>
 
-      <main className="stage-main">
-        <section className="card visual-stage-card" data-testid="visual-stage-card">
+      <main className="studio-layout">
+        <section className="card studio-canvas" data-testid="visual-stage-card">
           <div className="stage-top-row row">
             <button onClick={() => setPlaying((v) => !v)} disabled={!patches.length}>
               {playing ? 'Pause' : 'Play'}
@@ -1822,7 +1822,7 @@ export default function App() {
           </svg>
         </section>
 
-        <section className="card prompt-composer" data-testid="prompt-composer">
+        <section className="card studio-composer" data-testid="prompt-composer">
           {/* Accessible status text for e2e tests — visually hidden */}
           <span
             className="sr-only"
@@ -1863,7 +1863,7 @@ export default function App() {
           {lastError ? <p className="error">{lastError}</p> : null}
         </section>
 
-        <section className="card agent-log-panel" data-testid="agent-log-panel">
+        <section className="card studio-log" data-testid="agent-log-panel">
           <div className="row controls">
             <h2>Backend Agent Thread</h2>
             <button onClick={() => setAgentLog([])} disabled={!agentLog.length}>Clear</button>
@@ -1883,8 +1883,8 @@ export default function App() {
             )}
           </div>
         </section>
-        <aside className={`card settings-panel ${toolsOpen ? 'open' : 'collapsed'}`} aria-label="settings panel">
-          <div className="settings-header">
+        <aside className={`card studio-inspector ${toolsOpen ? 'open' : 'collapsed'}`} aria-label="settings panel">
+          <div className="inspector-header">
             <div>
               <p className="eyebrow">Control panel</p>
               <h2>Settings</h2>
@@ -1895,7 +1895,7 @@ export default function App() {
           </div>
 
           {toolsOpen ? (
-            <div className="control-panel">
+            <div className="inspector-panel">
               <section className="setup-panel settings-summary">
                 <h3>System Status</h3>
                 <p className="muted">Build: {buildRevisionLabel}</p>
@@ -1915,13 +1915,15 @@ export default function App() {
                 </div>
               </section>
 
-              <div className="settings-tabs" role="tablist" aria-label="settings sections">
-                <button className={settingsTab === 'overview' ? 'active' : ''} onClick={() => setSettingsTab('overview')} role="tab" aria-selected={settingsTab === 'overview'}>Overview</button>
+              <div className="inspector-tabs" role="tablist" aria-label="settings sections">
+                <button className={settingsTab === 'overview' ? 'active' : ''} onClick={() => setSettingsTab('overview')} role="tab" aria-selected={settingsTab === 'overview'}>Runtime</button>
                 <button className={settingsTab === 'voice' ? 'active' : ''} onClick={() => setSettingsTab('voice')} role="tab" aria-selected={settingsTab === 'voice'}>Voice</button>
                 <button className={settingsTab === 'runs' ? 'active' : ''} onClick={() => setSettingsTab('runs')} role="tab" aria-selected={settingsTab === 'runs'}>Runs</button>
                 <button className={settingsTab === 'artifacts' ? 'active' : ''} onClick={() => setSettingsTab('artifacts')} role="tab" aria-selected={settingsTab === 'artifacts'}>Artifacts</button>
                 <button className={settingsTab === 'setup' ? 'active' : ''} onClick={() => setSettingsTab('setup')} role="tab" aria-selected={settingsTab === 'setup'}>Setup</button>
               </div>
+
+              <div className="inspector-content">
 
               {settingsTab === 'overview' ? (
                 <section className="section-block">
@@ -2180,6 +2182,7 @@ export default function App() {
                   </section>
                 )
               ) : null}
+              </div>
             </div>
           ) : null}
         </aside>
