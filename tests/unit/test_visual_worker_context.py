@@ -1,7 +1,10 @@
+import pytest
+from services.agents.visual import worker as visual_worker
 from services.agents.visual.worker import generate_visual_strokes
 
 
-def test_render_mode_from_context():
+def test_render_mode_from_context(monkeypatch):
+    monkeypatch.setattr(visual_worker, "_build_llm_visual_script", lambda p, m: [{"kind": "setRenderMode", "params": {"mode": m}}])
     strokes = generate_visual_strokes(
         "draw a lively scene",
         context={"capability_brief": "renderer=3d"},
@@ -11,7 +14,8 @@ def test_render_mode_from_context():
     assert any(stroke.get("params", {}).get("mode") == "3d" for stroke in render_modes)
 
 
-def test_follow_up_adds_context_motion():
+def test_follow_up_adds_context_motion(monkeypatch):
+    monkeypatch.setattr(visual_worker, "_build_llm_visual_script", lambda p, m: [{"kind": "setRenderMode", "params": {"mode": m}}])
     strokes = generate_visual_strokes(
         "refresh the fish",
         context={"turn_phase": "follow-up", "entity_details": [{"id": "fish_old", "kind": "fish"}]},

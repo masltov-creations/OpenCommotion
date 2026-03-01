@@ -98,9 +98,13 @@ def generate_text_response(prompt: str, context: Any | None = None) -> str:
     turn_phase = _context_field(context, "turn_phase")
     invocation_context = _build_contextual_invocation(scene_brief, capability_brief, turn_phase)
     request_prompt = cleaned
-    if _narration_context_enabled() and provider != "heuristic":
-        request_prompt = _build_narration_request(cleaned, invocation_context)
     system_prompt_override = _context_field(context, "system_prompt_override")
+    if _narration_context_enabled() and provider != "heuristic":
+        narration_sys, request_prompt = _build_narration_request(cleaned, invocation_context)
+        if system_prompt_override:
+            system_prompt_override = f"{system_prompt_override}\n\n{narration_sys}"
+        else:
+            system_prompt_override = narration_sys
 
     try:
         generated = selected.generate(request_prompt, system_prompt_override=system_prompt_override)
@@ -145,10 +149,10 @@ def rewrite_visual_prompt(prompt: str, *, context: str, first_turn: bool) -> tup
 
     adapters = build_adapters(timeout_s=_timeout_s())
     selected = adapters.get(provider, adapters["heuristic"])
-    request = _build_rewrite_request(prompt=cleaned, context=context, first_turn=first_turn)
+    sys_prompt, user_prompt = _build_rewrite_request(prompt=cleaned, context=context, first_turn=first_turn)
 
     try:
-        raw = (selected.generate(request) or "").strip()
+        raw = (selected.generate(user_prompt, system_prompt_override=sys_prompt) or "").strip()
     except AdapterError as exc:
         if _allow_fallback():
             metadata["warnings"] = [f"prompt_rewrite_provider_error:{provider}"]
@@ -269,8 +273,8 @@ def _default_invocation_context() -> str:
     )
 
 
-def _build_narration_request(prompt: str, context: str) -> str:
-    return (
+def _build_narration_request(prompt: str, context: str) -> tuple[str, str]:
+    sys_prompt = (
         "You are OpenCommotion narration agent.\n"
         "Invocation context:\n"
         f"{context}\n\n"
@@ -278,10 +282,9 @@ def _build_narration_request(prompt: str, context: str) -> str:
         "- Do not ask clarifying questions.\n"
         "- Assume rendering tools are active.\n"
         "- Respond in 1-3 concise sentences.\n"
-        "- Describe what is being shown and how it will animate.\n\n"
-        "User prompt:\n"
-        f"{prompt}"
+        "- Describe what is being shown and how it will animate."
     )
+    return sys_prompt, prompt
 
 
 def _rewrite_enabled() -> bool:
@@ -300,7 +303,7 @@ def _rewrite_max_chars() -> int:
     return max(80, min(1200, value))
 
 
-def _build_rewrite_request(prompt: str, context: str, first_turn: bool) -> str:
+def _build_rewrite_request(prompt: str, context: str, first_turn: bool) -> tuple[str, str]:
     example_block = (
         "Concise example:\n"
         "{\n"
@@ -316,7 +319,7 @@ def _build_rewrite_request(prompt: str, context: str, first_turn: bool) -> str:
         if first_turn
         else "Turn mode: follow-up. Prefer small deterministic updates over full rebuilds."
     )
-    return (
+    sys_prompt = (
         "You are OpenCommotion prompt-planner. Rewrite user input into a concrete render/update prompt.\n"
         "Runtime context instructions:\n"
         "- You are inside OpenCommotion orchestrator and your output feeds a visual scene compiler.\n"
@@ -339,7 +342,6 @@ def _build_rewrite_request(prompt: str, context: str, first_turn: bool) -> str:
         f"{mode_note}\n\n"
         f"Scene context snapshot:\n{context}\n\n"
         f"{example_block}\n"
-        f"User prompt:\n{prompt}\n\n"
         "Return EXACTLY one JSON object with this schema:\n"
         "{\n"
         "  \"visual_prompt\": \"<one-line imperative prompt starting with draw/update/show>\",\n"
@@ -349,6 +351,7 @@ def _build_rewrite_request(prompt: str, context: str, first_turn: bool) -> str:
         "  \"language_semantics\": [\"<semantic choices used>\"]\n"
         "}\n"
     )
+    return sys_prompt, prompt
 
 
 def _parse_rewrite_response(raw: str, fallback: str) -> tuple[str, bool]:

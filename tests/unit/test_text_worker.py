@@ -88,6 +88,16 @@ def test_extract_openclaw_text_joins_payload_rows() -> None:
     assert adapters.extract_openclaw_text(payload) == "hello\n\nworld"
 
 
+def test_extract_openclaw_text_handles_prefixed_warning_lines() -> None:
+    payload = "\n".join(
+        [
+            "Invalid config at ~/.openclaw/openclaw.json",
+            '{"payloads":[{"text":"openclaw reply"}]}',
+        ]
+    )
+    assert adapters.extract_openclaw_text(payload) == "openclaw reply"
+
+
 def test_generate_text_response_with_codex_cli_provider(tmp_path, monkeypatch) -> None:
     fake_codex = tmp_path / "fake-codex"
     fake_codex = _write_executable(
@@ -140,6 +150,7 @@ def test_generate_text_response_wraps_cli_prompt_with_invocation_context(monkeyp
     class FakeAdapter:
         def generate(self, prompt: str, *, system_prompt_override: str | None = None) -> str:
             captured["prompt"] = prompt
+            captured["system"] = system_prompt_override or ""
             return "rendering now"
 
         def capabilities(self, probe: bool = False) -> dict[str, object]:
@@ -159,11 +170,10 @@ def test_generate_text_response_wraps_cli_prompt_with_invocation_context(monkeyp
 
     text = worker.generate_text_response("show a bouncing ball")
     assert text == "OpenCommotion: rendering now"
-    sent = captured.get("prompt", "")
-    assert "Invocation context:" in sent
-    assert "User prompt:" in sent
-    assert "show a bouncing ball" in sent
-
+    sent_sys = captured.get("system", "")
+    assert "Invocation context:" in sent_sys
+    assert "show a bouncing ball" in captured.get("prompt", "")
+    assert "You are OpenCommotion narration agent" in sent_sys
 
 def test_rewrite_visual_prompt_parses_structured_response(tmp_path, monkeypatch) -> None:
     fake_codex = tmp_path / "fake-codex-rewrite"

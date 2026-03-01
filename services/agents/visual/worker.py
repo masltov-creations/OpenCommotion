@@ -9,6 +9,8 @@ import re
 import traceback
 from typing import Any
 
+from services.agents.text.worker import LLMEngineError
+
 logger = logging.getLogger("opencommotion.visual")
 
 # Removed legacy heuristic maps (COLOR_MAP, DRAW_VERBS, SHAPE_ALIASES, NOUN_STOP_WORDS, COUNT_WORDS)
@@ -327,7 +329,7 @@ def _build_llm_visual_script(prompt: str, mode: str) -> list[dict]:
     """
     provider = _llm_provider_for_visual()
     if provider not in _VALID_LLM_PROVIDERS_FOR_VISUAL:
-        return []
+        raise LLMEngineError(provider=provider, message=f"Visual provider '{provider}' is not supported.")
 
     all_warnings: list[str] = []
 
@@ -337,25 +339,22 @@ def _build_llm_visual_script(prompt: str, mode: str) -> list[dict]:
         adapters_map = build_adapters(timeout_s=_llm_timeout_for_visual())
         adapter = adapters_map.get(provider)
         if adapter is None:
-            logger.warning("LLM visual: adapter '%s' not found in build_adapters result", provider)
-            return []  # let cascade continue
+            raise LLMEngineError(provider=provider, message=f"Visual adapter '{provider}' not successfully built.")
         system_prompt = _visual_dsl_system_prompt()
         user_request = f"Scene to render: {prompt}\nRender mode: {mode}"
         raw = (adapter.generate(user_request, system_prompt_override=system_prompt) or "").strip()
         if not raw:
-            logger.warning("LLM visual: provider '%s' returned empty response for prompt: %s", provider, prompt[:80])
-            return []  # let cascade continue
+            raise LLMEngineError(provider=provider, message=f"Provider '{provider}' returned empty response for prompt: {prompt[:80]}")
         commands, warnings = _parse_llm_visual_response(raw)
         all_warnings.extend(warnings)
         if not commands:
-            logger.warning("LLM visual: no usable commands parsed from response (warnings: %s)", warnings)
-            return []  # let cascade continue
+            raise LLMEngineError(provider=provider, message=f"No usable commands parsed from response (warnings: {warnings})")
     except AdapterError as exc:
         logger.warning("LLM visual: adapter error from '%s': %s", provider, exc)
-        return []  # let cascade continue
-    except Exception:  # noqa: BLE001
+        raise LLMEngineError(provider=provider, message=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
         logger.error("LLM visual: unexpected error during generation:\n%s", traceback.format_exc())
-        return []  # let cascade continue
+        raise LLMEngineError(provider=provider, message=f"Unexpected visual generation error: {exc}") from exc
 
     strokes = [
         {
@@ -389,42 +388,7 @@ def _build_llm_visual_script(prompt: str, mode: str) -> list[dict]:
     return strokes
 
 
-def _fallback_visual_strokes(prompt: str, mode: str, warnings: list[str]) -> list[dict]:
-    """Produce a minimal but visible fallback scene when LLM visual generation fails.
 
-    Instead of returning an empty list, this creates a basic annotation and
-    a placeholder shape so the user always sees *something*.
-    """
-    subject = prompt[:60].strip() or "scene"
-    warning_text = "; ".join(warnings[:3]) if warnings else "LLM visual unavailable"
-    return [
-        {
-            "stroke_id": "render-mode-llm-fallback",
-            "kind": "setRenderMode",
-            "params": {"mode": mode},
-            "timing": {"start_ms": 0, "duration_ms": 80, "easing": "linear"},
-        },
-        {
-            "stroke_id": "llm-fallback-script",
-            "kind": "runScreenScript",
-            "params": {
-                "program": {
-                    "commands": [
-                        {"op": "rect", "id": "fallback_bg", "point": [160, 80], "width": 400, "height": 200, "fill": "#1e293b", "stroke": "#475569", "line_width": 2},
-                        {"op": "text", "id": "fallback_label", "point": [200, 160], "text": subject, "fill": "#e2e8f0", "font_size": 18},
-                        {"op": "text", "id": "fallback_note", "point": [200, 200], "text": "(visual recovery)", "fill": "#94a3af", "font_size": 12},
-                    ]
-                }
-            },
-            "timing": {"start_ms": 40, "duration_ms": 3600, "easing": "linear"},
-        },
-        {
-            "stroke_id": "llm-fallback-warning",
-            "kind": "annotateInsight",
-            "params": {"text": f"Visual recovery: {warning_text}"},
-            "timing": {"start_ms": 80, "duration_ms": 160, "easing": "linear"},
-        },
-    ]
 
 
 
@@ -828,18 +792,11 @@ def generate_visual_strokes(prompt: str, context: Any | None = None) -> list[dic
     existing_entity_ids = _context_entity_ids(context)
     strokes: list[dict] = []
 
-    # Prioritize LLM-powered freeform visual generation with rigid schema.
+    # Execute LLM-powered freeform visual generation with rigid schema.
+    # LLMEngineError exceptions bubble up through here intentionally.
     llm_strokes = _build_llm_visual_script(p, mode)
     if llm_strokes:
         strokes.extend(llm_strokes)
-
-    if not strokes and p.strip():
-        # Final heuristic fallback: seeded polyline palette script.
-        strokes.extend(_build_palette_script_strokes(prompt=p, mode=mode))
-
-    if not strokes and p.strip():
-        # Absolute last resort: visible recovery scene so the user never sees an empty canvas.
-        strokes.extend(_fallback_visual_strokes(p, mode, ["All visual generation paths exhausted"]))
 
     if follow_up and existing_entity_ids:
         strokes.append(

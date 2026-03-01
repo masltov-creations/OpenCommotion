@@ -6,7 +6,6 @@ import pytest
 
 from services.agents.visual.worker import (
     _SUPPORTED_OPS,
-    _fallback_visual_strokes,
     _parse_llm_visual_response,
     _translate_unsupported_op,
 )
@@ -134,28 +133,4 @@ def test_missing_commands_key_returns_warning() -> None:
     assert any("commands" in w for w in warnings)
 
 
-# ---------------------------------------------------------------------------
-# _fallback_visual_strokes
-# ---------------------------------------------------------------------------
 
-
-def test_fallback_returns_non_empty_strokes() -> None:
-    strokes = _fallback_visual_strokes("futuristic city", "2d", ["adapter error"])
-    assert len(strokes) > 0
-    kinds = {s["kind"] for s in strokes}
-    assert "runScreenScript" in kinds
-    assert "annotateInsight" in kinds
-
-
-def test_fallback_includes_warning_text() -> None:
-    strokes = _fallback_visual_strokes("test", "2d", ["could not connect"])
-    warning_stroke = next(s for s in strokes if s["kind"] == "annotateInsight")
-    assert "could not connect" in warning_stroke["params"]["text"]
-
-
-def test_fallback_includes_prompt_label() -> None:
-    strokes = _fallback_visual_strokes("a beautiful sunset", "2d", [])
-    script = next(s for s in strokes if s["kind"] == "runScreenScript")
-    commands = script["params"]["program"]["commands"]
-    label = next(c for c in commands if c.get("id") == "fallback_label")
-    assert "sunset" in label["text"]
