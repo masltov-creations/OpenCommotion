@@ -169,7 +169,7 @@ body {
 
 .visual-stage-card {
   grid-area: visual;
-  min-height: clamp(320px, 55vh, 540px);
+  min-height: clamp(280px, 48vh, 500px);
 }
 
 .visual-canvas {
@@ -189,7 +189,7 @@ body {
 
 .agent-log-panel {
   grid-area: log;
-  min-height: clamp(220px, 26vh, 320px);
+  min-height: clamp(180px, 22vh, 280px);
   display: flex;
   flex-direction: column;
 }
@@ -231,7 +231,7 @@ body {
 
 .composer-input {
   min-height: 86px;
-  max-height: 132px;
+  max-height: 110px;
   margin-bottom: 8px;
 }
 
@@ -240,10 +240,10 @@ body {
   position: sticky;
   top: 12px;
   align-self: start;
-  max-height: calc(100vh - 120px);
-  overflow: auto;
+  max-height: calc(100vh - 96px);
+  overflow: hidden;
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .settings-panel.collapsed {
@@ -266,7 +266,65 @@ body {
 
 .control-panel {
   display: grid;
-  gap: 12px;
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.section-block {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(2, 6, 23, 0.28);
+}
+
+.section-block h3,
+.setup-panel h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.setup-group {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.setup-group h4 {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.settings-summary {
+  margin-bottom: 2px;
+}
+
+.settings-summary-actions {
+  margin-bottom: 0;
+}
+
+.settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.settings-tabs button {
+  background: rgba(15, 23, 42, 0.7);
+  color: var(--text-muted);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  padding: 7px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.settings-tabs button.active {
+  border-color: rgba(34, 211, 238, 0.58);
+  color: #a5f3fc;
+  background: rgba(8, 47, 73, 0.62);
 }
 
 select:focus {
