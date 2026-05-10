@@ -13,7 +13,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gateway", default="http://127.0.0.1:8000")
     parser.add_argument("--session", default="openclaw-cli-demo")
     parser.add_argument("--prompt", default="ufo landing with pie chart and narrated insight")
-    parser.add_argument("--api-key", default=os.getenv("OPENCOMMOTION_GATEWAY_API_KEY", "dev-opencommotion-key"))
+    parser.add_argument("--api-key", default=os.getenv("OPENCOMMOTION_GATEWAY_API_KEY", os.getenv("OPENCOMMOTION_API_KEY", "")))
     parser.add_argument("--openclaw-bin", default=os.getenv("OPENCOMMOTION_OPENCLAW_BIN", "openclaw"))
     parser.add_argument("--openclaw-session-prefix", default=os.getenv("OPENCOMMOTION_OPENCLAW_SESSION_PREFIX", "opencommotion"))
     parser.add_argument("--skip-setup", action="store_true")

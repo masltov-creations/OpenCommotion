@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 import subprocess
 import shutil
 from pathlib import Path
@@ -9,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ENV_EXAMPLE_PATH = ROOT / ".env.example"
 ENV_PATH = ROOT / ".env"
-DEFAULT_LOCAL_TRUSTED_IPS = "127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+DEFAULT_LOCAL_TRUSTED_IPS = "127.0.0.1/32,::1/128"
 
 
 def detect_app_url() -> str:
@@ -327,7 +328,7 @@ def build_configuration(existing: dict[str, str]) -> tuple[dict[str, str], list[
     if auth_mode == "api-key":
         config["OPENCOMMOTION_API_KEYS"] = ask(
             "Gateway API keys (comma-separated)",
-            config.get("OPENCOMMOTION_API_KEYS", "dev-opencommotion-key"),
+            config.get("OPENCOMMOTION_API_KEYS") or secrets.token_urlsafe(32),
         )
     else:
         config["OPENCOMMOTION_ALLOWED_IPS"] = ask(

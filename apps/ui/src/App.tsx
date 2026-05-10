@@ -138,7 +138,7 @@ const viteEnv = (import.meta as { env?: Record<string, string> }).env || {}
 const browserOrigin = typeof window !== 'undefined' ? window.location.origin : ''
 const gateway = viteEnv.VITE_GATEWAY_URL || browserOrigin || 'http://127.0.0.1:8000'
 const wsGateway = gateway.replace(/^http/i, 'ws')
-const gatewayApiKey = viteEnv.VITE_GATEWAY_API_KEY || 'dev-opencommotion-key'
+const gatewayApiKey = viteEnv.VITE_GATEWAY_API_KEY || ''
 const orchestrateTimeoutMs = parsePositiveMs(viteEnv.VITE_ORCHESTRATE_TIMEOUT_MS, 120000)
 const isTestMode = viteEnv.MODE === 'test'
 const uiVersion = __OPENCOMMOTION_UI_VERSION__
@@ -1579,7 +1579,7 @@ export default function App() {
                       <input
                         value={setupDraft.OPENCOMMOTION_API_KEYS || ''}
                         onChange={(e) => updateSetupDraft('OPENCOMMOTION_API_KEYS', e.target.value)}
-                        placeholder="dev-opencommotion-key"
+                        placeholder="generate a unique API key"
                       />
                       <label className="muted">Allowed IP/CIDR list (network-trust mode)</label>
                       <input

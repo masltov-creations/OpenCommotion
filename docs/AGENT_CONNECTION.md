@@ -52,13 +52,13 @@ Contributor note:
 
 Default auth mode is API key.
 
-- HTTP header: `x-api-key: dev-opencommotion-key`
-- WebSocket query param: `?api_key=dev-opencommotion-key`
+- HTTP header: `x-api-key: ${OPENCOMMOTION_API_KEY}`
+- WebSocket query param: `?api_key=${OPENCOMMOTION_API_KEY}`
 
 Use this in curl examples:
 
 ```bash
-export OPENCOMMOTION_API_KEY=dev-opencommotion-key
+export OPENCOMMOTION_API_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
 ```
 
 ## 2) Health checks

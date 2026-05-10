@@ -240,7 +240,7 @@ python3 scripts/agent_examples/codex_cli_turn_client.py \
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8000/v1/agent-runs \
-  -H "x-api-key: dev-opencommotion-key" \
+  -H "x-api-key: ${OPENCOMMOTION_API_KEY}" \
   -H "content-type: application/json" \
   -d '{"label":"codex-run","auto_run":true}'
 ```
@@ -249,7 +249,7 @@ Then enqueue prompts from the UI (**Agent Run Manager**) or API:
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8000/v1/agent-runs/<run_id>/enqueue \
-  -H "x-api-key: dev-opencommotion-key" \
+  -H "x-api-key: ${OPENCOMMOTION_API_KEY}" \
   -H "content-type: application/json" \
   -d '{"prompt":"animate moonwalk progression with narration"}'
 ```
@@ -269,7 +269,7 @@ Headless/CI note:
 
 Auth defaults:
 - `OPENCOMMOTION_AUTH_MODE=api-key`
-- `OPENCOMMOTION_API_KEYS=dev-opencommotion-key`
+- `OPENCOMMOTION_API_KEYS=<generated-api-key>`
 - `OPENCOMMOTION_ALLOWED_IPS=127.0.0.1/32,::1/128` (local-machine-only default for `network-trust`)
 - In `network-trust` mode, do not leave `OPENCOMMOTION_ALLOWED_IPS` empty unless you intentionally want all IPs allowed.
 

@@ -19,7 +19,7 @@ def test_gateway_serves_ui_index_when_dist_available() -> None:
 
 def test_gateway_serves_ui_assets_without_api_key(monkeypatch) -> None:
     monkeypatch.setenv("OPENCOMMOTION_AUTH_MODE", "api-key")
-    monkeypatch.setenv("OPENCOMMOTION_API_KEYS", "dev-opencommotion-key")
+    monkeypatch.setenv("OPENCOMMOTION_API_KEYS", "test-opencommotion-key")
     c = TestClient(app)
 
     index_res = c.get("/")

@@ -27,7 +27,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gateway", default="http://127.0.0.1:8000")
     parser.add_argument("--session", default="codex-cli-demo")
     parser.add_argument("--prompt", default="moonwalk adoption chart with concise narration")
-    parser.add_argument("--api-key", default=os.getenv("OPENCOMMOTION_GATEWAY_API_KEY", "dev-opencommotion-key"))
+    parser.add_argument("--api-key", default=os.getenv("OPENCOMMOTION_GATEWAY_API_KEY", os.getenv("OPENCOMMOTION_API_KEY", "")))
     parser.add_argument("--codex-bin", default=os.getenv("OPENCOMMOTION_CODEX_BIN", "codex"))
     parser.add_argument("--codex-model", default=os.getenv("OPENCOMMOTION_CODEX_MODEL", ""))
     parser.add_argument("--skip-setup", action="store_true")

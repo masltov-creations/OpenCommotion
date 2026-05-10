@@ -220,7 +220,7 @@ def run_probe(base_url: str, api_key: str, seed: int, inprocess: bool) -> dict[s
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run seeded random prompt compatibility probe.")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
-    parser.add_argument("--api-key", default="dev-opencommotion-key")
+    parser.add_argument("--api-key", default=os.getenv("OPENCOMMOTION_GATEWAY_API_KEY", os.getenv("OPENCOMMOTION_API_KEY", "")))
     parser.add_argument("--seed", type=int, default=23)
     parser.add_argument("--out", default="runtime/prompt-probe/latest.json")
     parser.add_argument("--inprocess", action="store_true", help="Run gateway/orchestrator in-process without a live stack.")

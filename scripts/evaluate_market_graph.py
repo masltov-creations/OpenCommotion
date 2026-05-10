@@ -20,7 +20,7 @@ from services.agents.visual.quality import evaluate_market_growth_scene
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate market-growth graph compatibility for an orchestrated turn.")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000", help="Gateway base URL.")
-    parser.add_argument("--api-key", default="dev-opencommotion-key", help="Gateway API key.")
+    parser.add_argument("--api-key", default=os.getenv("OPENCOMMOTION_GATEWAY_API_KEY", os.getenv("OPENCOMMOTION_API_KEY", "")), help="Gateway API key.")
     parser.add_argument("--session", default="graph-eval", help="Session id for the orchestrate call.")
     parser.add_argument(
         "--prompt",

@@ -11,7 +11,7 @@ services:
     container_name: opencommotion-postgres
     environment:
       POSTGRES_USER: opencommotion
-      POSTGRES_PASSWORD: opencommotion
+      POSTGRES_PASSWORD: ${OPENCOMMOTION_POSTGRES_PASSWORD:?set OPENCOMMOTION_POSTGRES_PASSWORD}
       POSTGRES_DB: opencommotion
     ports:
       - "5432:5432"

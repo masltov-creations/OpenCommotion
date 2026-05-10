@@ -260,7 +260,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prompt", default="moonwalk adoption chart with voice")
     parser.add_argument(
         "--api-key",
-        default=os.getenv("OPENCOMMOTION_GATEWAY_API_KEY", os.getenv("OPENCOMMOTION_API_KEY", "dev-opencommotion-key")),
+        default=os.getenv("OPENCOMMOTION_GATEWAY_API_KEY", os.getenv("OPENCOMMOTION_API_KEY", "")),
     )
     parser.add_argument("--health-attempts", type=int, default=12)
     parser.add_argument("--rest-retries", type=int, default=3)

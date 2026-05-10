@@ -121,7 +121,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--gateway", default="http://127.0.0.1:8000", help="Gateway base URL")
     parser.add_argument(
         "--api-key",
-        default=os.getenv("OPENCOMMOTION_GATEWAY_API_KEY", os.getenv("OPENCOMMOTION_API_KEY", "dev-opencommotion-key")),
+        default=os.getenv("OPENCOMMOTION_GATEWAY_API_KEY", os.getenv("OPENCOMMOTION_API_KEY", "")),
         help="Gateway API key",
     )
     parser.add_argument("--session", default="agent-session-demo", help="Session ID")
